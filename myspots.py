@@ -101,9 +101,9 @@ def extract_kml_placemarks(kml_path):
 
 @group(context_settings={'help_option_names': ['-h', '--help']})
 @option('-c', '--config', 'config_path',
-        default=osp.expanduser('~/.myspots.yaml'),
+        default=osp.expanduser('~/.config/myspots/cred.yaml'),
         type=Path(exists=True, dir_okay=False),
-        help='myspots config (default ~/.myspots.yaml)')
+        help='myspots config (default ~/.config/myspots/cred.yaml)')
 @pass_context
 def cli(ctx, config_path):
     with open(config_path, 'r') as ip:
