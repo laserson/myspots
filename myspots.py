@@ -1,5 +1,3 @@
-#! /usr/bin/env python
-
 import os
 import os.path as osp
 import sys
@@ -117,6 +115,7 @@ def extract_kml_placemarks(kml_path):
 def cli(ctx, config_path):
     with open(config_path, "r") as ip:
         config = yaml.load(ip)
+    ctx.ensure_object(dict)
     ctx.obj["gmclient"] = GoogleMapsClient(config["google_api_key"])
     ctx.obj["atclient"] = Airtable(
         config["airtable_base_id"], config["airtable_api_key"]
@@ -204,7 +203,3 @@ def add_kml(ctx, kml_path, skip):
         raise
 
     print("\nAdded {} out of {} attempted".format(num_added, len(placemarks)))
-
-
-if __name__ == "__main__":
-    cli(obj={})
