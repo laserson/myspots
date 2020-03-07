@@ -16,11 +16,10 @@ def load_places_from_airtable():
     config = load_config()
     airtable = get_airtable(config)
     record_list = airtable.get_all()
-    df = pd.DataFrame([record['fields'] for record in record_list])
+    df = pd.DataFrame([record["fields"] for record in record_list])
     return df
 
 
 places_df = load_places_from_airtable()
 
 st.map(places_df)
-
