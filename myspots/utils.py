@@ -1,7 +1,9 @@
 import sys
+import json
 from pathlib import Path
 
 import yaml
+import pandas as pd
 from googlemaps import Client as GoogleMapsClient
 from airtable import Airtable
 
@@ -14,9 +16,17 @@ def get_config(path=None):
     return config
 
 
-def get_airtable(config):
+def get_airtable(config, table="places"):
     return Airtable(
-            config["airtable_base_id"], "places", api_key=config["airtable_api_key"])
+        config["airtable_base_id"], table, api_key=config["airtable_api_key"]
+    )
+
+
+def get_airtable_as_dataframe(config, table="places", view=None):
+    airtable = get_airtable(config, table)
+    record_list = airtable.get_all(view=view)
+    df = pd.DataFrame([record["fields"] for record in record_list])
+    return df
 
 
 def get_google_maps_client(config):
@@ -73,7 +83,7 @@ def add_place_ids(google_maps_client, airtable, place_ids):
         if place_exists(airtable, place_id):
             print(f"Already exists; skipping {place_id}")
             continue
-        place_data = get_detailed_place_data(gmclient, place_id)
+        place_data = get_detailed_place_data(google_maps_client, place_id)
         if place_data is None:
             print(f"Skipping {place_id}")
             continue
@@ -93,6 +103,7 @@ def add_place_ids(google_maps_client, airtable, place_ids):
 
 def extract_kml_placemarks(kml_path):
     from fastkml import KML
+
     k = KML()
     results = []
     with open(kml_path, "rb") as ip:
