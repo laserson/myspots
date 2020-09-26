@@ -77,7 +77,6 @@ def get_detailed_place_data(google_maps_client, place_id):
 
 
 def add_place_ids(google_maps_client, airtable, place_ids):
-    num_ids = len(place_ids)
     num_added = 0
     for place_id in place_ids:
         if place_exists(airtable, place_id):
