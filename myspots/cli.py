@@ -67,7 +67,9 @@ def add_place(ctx, query, location, radius):
         sys.exit(f"Abort: did not understand selection: {selection}")
 
     num_added = add_place_ids(
-        google_maps_client, airtable, [r["place_id"] for r in selected_results],
+        google_maps_client,
+        airtable,
+        [r["place_id"] for r in selected_results],
     )
 
     print("Added {} out of {} attempted".format(num_added, len(selected_results)))
@@ -212,6 +214,62 @@ def add_kml(ctx, kml_path, skip):
         raise
 
     print("\nAdded {} out of {} attempted".format(num_added, len(placemarks)))
+
+
+@cli.command(name="export-geojson")
+@pass_context
+def export_geojson(ctx):
+    import geojson
+    from zipfile import ZipFile
+
+    config = ctx.obj["config"]
+
+    airtable = get_airtable(config, "categories")
+    record_list = airtable.get_all(view=None)
+    categories = {}
+    for record in record_list:
+        id_ = record["id"]
+        name = record["fields"]["category"]
+        parent = record["fields"].get("parent", [None])[0]
+        top_level = None
+        categories[id_] = dict(id=id_, name=name, parent=parent)
+    for id_ in categories.keys():
+        top_level = id_
+        while categories[top_level]["parent"] is not None:
+            top_level = categories[top_level]["parent"]
+        categories[id_]["top_level"] = categories[top_level]["name"]
+    categories["UNCATEGORIZED"] = {"name": "UNCATEGORIZED", "top_level": "UNCATEGORIZED"}
+
+    airtable = get_airtable(config, "places")
+    record_list = airtable.get_all(view=None)
+    features = []
+    for record in record_list:
+        id_ = record["fields"]["id"]
+        geometry = geojson.Point(
+            coordinates=(record["fields"]["longitude"], record["fields"]["latitude"])
+        )
+        tags = record["fields"].get("tags", [])
+        cat_list = record["fields"].get("primary_category", ["UNCATEGORIZED"])
+        for cat in cat_list:
+            properties = {
+                "name": record["fields"]["name"],
+                "address": record["fields"]["address"],
+                "primary_category": categories[cat]["name"],
+                "top_level_category": categories[cat]["top_level"],
+                "website": record["fields"].get("website", ""),
+                "is_reviewed": record["fields"].get("is_reviewed", False),
+                "is_visited": record["fields"].get("is_visited", False),
+                "is_perm_closed": record["fields"].get("is_perm_closed", False),
+                "is_lame": record["fields"].get("is_lame", False),
+                "is_queued": record["fields"].get("is_queued", False),
+                "tags": tags,
+            }
+            feature = geojson.Feature(id=id_, geometry=geometry, properties=properties)
+            features.append(feature)
+    feature_collection = geojson.FeatureCollection(features)
+
+    with open("myspots.geojson", "w") as op:
+        print(geojson.dumps(feature_collection), file=op)
 
 
 @cli.command()
