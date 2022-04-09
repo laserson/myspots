@@ -1,11 +1,13 @@
 import sys
 import json
 from pathlib import Path
+from networkx.algorithms.shortest_paths.unweighted import predecessor
 
 import yaml
 import pandas as pd
 from googlemaps import Client as GoogleMapsClient
 from airtable import Airtable
+import networkx as nx
 
 
 def get_config(path=None):
@@ -31,6 +33,36 @@ def get_airtable_as_dataframe(config, table="places", view=None):
 
 def get_google_maps_client(config):
     return GoogleMapsClient(config["google_api_key"])
+
+
+def get_sqlite_connection(config):
+    pass
+
+
+def generate_ddl():
+    create_table_stmt = """
+    CREATE TABLE place (
+        id INTEGER PRIMARY KEY,
+        primary_category TEXT,
+        name TEXT,
+        is_visited INTEGER,
+        is_queued INTEGER,
+        is_reviewed INTEGER,
+        is_lame INTEGER,
+        is_perm_closed INTEGER,
+        tags TEXT,
+        notes TEXT,
+        website TEXT,
+        address TEXT,
+        latitude REAL,
+        longitude REAL,
+        google_place_id TEXT,
+        google_json_data TEXT,
+        date_added TEXT,
+        last_modified TEXT,
+        airtable_record_id
+    )
+    """
 
 
 def query_places(google_maps_client, query, location=None, latlng=None, radius=None):
@@ -116,3 +148,60 @@ def extract_kml_placemarks(kml_path):
                 lng = placemark.geometry.x
                 results.append((name, lat, lng, folder_name))
     return results
+
+
+def get_category_tree(config: dict) -> nx.DiGraph:
+    df = (
+        get_airtable_as_dataframe(config, "categories", view="Grid view")
+        .drop(columns="places")
+        .explode("parent")
+    )
+    categories = nx.DiGraph()
+    for tup in df.itertuples():
+        categories.add_node(
+            tup.airtable_record_id,
+            name=tup.category,
+            google_style_icon_code=tup.google_style_icon_code,
+        )
+        if isinstance(tup.parent, str):
+            categories.add_edge(tup.parent, tup.airtable_record_id)
+    return categories
+
+
+def get_root_category_mapping(config: dict) -> pd.DataFrame:
+    category_tree = get_category_tree(config)
+    records = []
+    for node in category_tree:
+        path_to_root = [node]
+        while category_tree.in_degree(path_to_root[-1]) > 0:
+            path_to_root.extend(list(category_tree.predecessors(path_to_root[-1])))
+        root_id = path_to_root[-1]
+        root_name = category_tree.nodes[root_id]["name"]
+        records.append(
+            {
+                "category_id": node,
+                "category_name": category_tree.nodes[node]["name"],
+                "category_root_id": root_id,
+                "category_root_name": root_name,
+                "google_style_icon_code": category_tree.nodes[node][
+                    "google_style_icon_code"
+                ],
+            }
+        )
+    categories_df = pd.DataFrame(records)
+    return categories_df
+
+
+def get_places(config: dict) -> pd.DataFrame:
+    categories_df = get_root_category_mapping(config)
+    places_df = (
+        get_airtable_as_dataframe(config, "places")
+        .explode("primary_category")
+        .merge(
+            categories_df,
+            how="left",
+            left_on="primary_category",
+            right_on="category_id",
+        )
+    )
+    return places_df

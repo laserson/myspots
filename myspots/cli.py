@@ -13,6 +13,8 @@ from myspots.utils import (
     query_places,
     add_place_ids,
     get_airtable_as_dataframe,
+    get_root_category_mapping,
+    get_places,
 )
 
 
@@ -85,58 +87,49 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     from shapely.geometry import Point
     import pandas as pd
 
-    df1 = get_airtable_as_dataframe(ctx.obj["config"], "categories", view="Grid view")
-    df2 = df1.drop("places", axis=1).explode("parent")
-    # TODO: need to repeatedly self-join until reach the root
-    df3 = pd.merge(
-        df2,
-        df2,
-        how="left",
-        left_on="parent",
-        right_on="airtable_record_id",
-        suffixes=("", "_join"),
-    )
-    categories_df = df3
-    df1 = get_airtable_as_dataframe(ctx.obj["config"], "places")
-    df2 = df1.explode("primary_category")
-    df3 = pd.merge(
-        df2,
-        categories_df,
-        how="left",
-        left_on="primary_category",
-        right_on="airtable_record_id",
-    )
-    places_df = df3
+    config = ctx.obj["config"]
+    categories_df = get_root_category_mapping(config)
+    places_df = get_places(config)
 
+    # construct KML containers - works bc of mutability
     ns = "{http://www.opengis.net/kml/2.2}"
     k = kml.KML()
-
-    # construct all nodes in hierarchy of categories
-    folders = {
-        "_root": kml.Document(
-            ns=ns,
-            id="myspots-document",
-            name="myspots-document",
-            description="myspots-document",
-        ),
-        "_uncat": kml.Folder(ns=ns, id="_uncat", name="uncategorized"),
-    }
-    for tup in categories_df.itertuples(index=False):
-        folders[tup.category] = kml.Folder(ns=ns, id=tup.category, name=tup.category)
-
-    # append folders into each other; works bc of mutability
-    k.append(folders["_root"])
-    folders["_root"].append(folders["_uncat"])
-    for tup in categories_df.itertuples(index=False):
-        parent = "_root" if pd.isna(tup.category_join) else tup.category_join
-        container = parent if hierarchical else "_root"
-        folders[container].append(folders[tup.category])
+    root_doc = kml.Document(
+        ns=ns,
+        id="myspots-document",
+        name="myspots-document",
+        description="myspots-document",
+    )
+    k.append(root_doc)
+    folders = {}
+    folders["uncategorized"] = kml.Folder(
+        ns=ns, id="uncategorized", name="uncategorized"
+    )
+    root_doc.append(folders["uncategorized"])
+    for category_name in categories_df["category_root_name"].unique():
+        folders[category_name] = kml.Folder(ns=ns, id=category_name, name=category_name)
+        root_doc.append(folders[category_name])
 
     # add places to approp folders
     for tup in places_df.itertuples(index=False):
-        category = "_uncat" if pd.isna(tup.category) else tup.category
-        style = None if no_styles else f"#style-{category}"
-        p = kml.Placemark(ns=ns, id=str(tup.id), name=tup.name, styleUrl=style)
+        category = (
+            "uncategorized"
+            if pd.isna(tup.category_root_name)
+            else tup.category_root_name
+        )
+        if no_styles or pd.isna(tup.google_style_icon_code):
+            style_url = "#icon-1899-757575-nodesc"
+        else:
+            if tup.is_favorite == True:
+                icon_color = "F9A825"
+            elif tup.is_queued == True:
+                icon_color = "558B2F"
+            elif tup.is_visited == True:
+                icon_color = "0288D1"
+            else:
+                icon_color = "757575"
+            style_url = f"#icon-{tup.google_style_icon_code}-{icon_color}-nodesc"
+        p = kml.Placemark(ns=ns, id=str(tup.id), name=tup.name, styleUrl=style_url)
         p.geometry = Point(tup.longitude, tup.latitude)
         folders[category].append(p)
 
@@ -144,31 +137,37 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     visibility = 0 if default_invisible else 1
     for container in folders.values():
         container.visibility = visibility
-    folders["_root"].visibility = 1
+    root_doc.visibility = 1
 
-    # define icon styles for placemarks
-    if not no_styles:
-        doc = folders["_root"]
-        doc.append_style(
-            styles.Style(
-                ns=ns,
-                id="style-_uncat",
-                styles=[
-                    styles.IconStyle(
-                        icon_href="https://raw.githubusercontent.com/google/material-design-icons/master/maps/1x_web/ic_place_black_48dp.png"
-                    )
-                ],
-            )
+    # define styles for placemarks using Google icon ids
+    # see: https://github.com/kitchen/kml-icon-converter/blob/master/style_map.csv
+    doc = root_doc
+    doc.append_style(
+        styles.Style(
+            ns=ns,
+            id="icon-1899-757575-nodesc",
+            styles=[
+                styles.IconStyle(
+                    icon_href="https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png"
+                )
+            ],
         )
-        for tup in categories_df.itertuples(index=False):
-            if pd.isna(tup.icon_href):
+    )
+    if not no_styles:
+        for tup in categories_df.itertuples():
+            if pd.isna(tup.google_style_icon_code):
                 continue
-            style = styles.Style(
-                ns=ns,
-                id=f"style-{tup.category}",
-                styles=[styles.IconStyle(icon_href=tup.icon_href)],
-            )
-            doc.append_style(style)
+            for icon_color in ["0288D1", "F9A825", "558B2F", "757575"]:
+                style = styles.Style(
+                    ns=ns,
+                    id=f"icon-{tup.google_style_icon_code}-{icon_color}-nodesc",
+                    styles=[
+                        styles.IconStyle(
+                            icon_href="https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png"
+                        )
+                    ],
+                )
+                doc.append_style(style)
 
     print(k.to_string(prettyprint=True))
 
@@ -238,7 +237,10 @@ def export_geojson(ctx):
         while categories[top_level]["parent"] is not None:
             top_level = categories[top_level]["parent"]
         categories[id_]["top_level"] = categories[top_level]["name"]
-    categories["UNCATEGORIZED"] = {"name": "UNCATEGORIZED", "top_level": "UNCATEGORIZED"}
+    categories["UNCATEGORIZED"] = {
+        "name": "UNCATEGORIZED",
+        "top_level": "UNCATEGORIZED",
+    }
 
     airtable = get_airtable(config, "places")
     record_list = airtable.get_all(view=None)
