@@ -112,6 +112,8 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
 
     # add places to approp folders
     for tup in places_df.itertuples(index=False):
+        if tup.is_perm_closed == True or tup.is_lame == True:
+            continue
         category = (
             "uncategorized"
             if pd.isna(tup.category_root_name)
@@ -121,13 +123,13 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
             style_url = "#icon-1899-757575-nodesc"
         else:
             if tup.is_favorite == True:
-                icon_color = "F9A825"
+                icon_color = "F9A825"  # yellow
             elif tup.is_queued == True:
-                icon_color = "558B2F"
+                icon_color = "558B2F"  # green
             elif tup.is_visited == True:
-                icon_color = "0288D1"
+                icon_color = "0288D1"  # blue
             else:
-                icon_color = "757575"
+                icon_color = "757575"  # grey
             style_url = f"#icon-{tup.google_style_icon_code}-{icon_color}-nodesc"
         p = kml.Placemark(ns=ns, id=str(tup.id), name=tup.name, styleUrl=style_url)
         p.geometry = Point(tup.longitude, tup.latitude)
