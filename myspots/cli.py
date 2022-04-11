@@ -12,9 +12,9 @@ from myspots.utils import (
     get_google_maps_client,
     query_places,
     add_place_ids,
-    get_airtable_as_dataframe,
     get_root_category_mapping,
     get_places,
+    get_tags,
 )
 
 
@@ -90,6 +90,7 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     config = ctx.obj["config"]
     categories_df = get_root_category_mapping(config)
     places_df = get_places(config)
+    tags_mapping = get_tags(config)
 
     # construct KML containers - works bc of mutability
     ns = "{http://www.opengis.net/kml/2.2}"
@@ -131,7 +132,20 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
             else:
                 icon_color = "757575"  # grey
             style_url = f"#icon-{tup.google_style_icon_code}-{icon_color}-nodesc"
-        p = kml.Placemark(ns=ns, id=str(tup.id), name=tup.name, styleUrl=style_url)
+        tags = (
+            (" | ".join([tags_mapping[t] for t in tup.tags]) + "\n")
+            if isinstance(tup.tags, list)
+            else ""
+        )
+        notes = tup.notes if pd.notna(tup.notes) else ""
+        description = f"{category}\n{tags}\n{notes}"
+        p = kml.Placemark(
+            ns=ns,
+            id=str(tup.id),
+            name=tup.name,
+            styleUrl=style_url,
+            description=description,
+        )
         p.geometry = Point(tup.longitude, tup.latitude)
         folders[category].append(p)
 

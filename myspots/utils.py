@@ -205,3 +205,10 @@ def get_places(config: dict) -> pd.DataFrame:
         )
     )
     return places_df
+
+
+def get_tags(config: dict) -> dict:
+    tags_df = get_airtable_as_dataframe(config, "tags").filter(
+        ["airtable_record_id", "Name"]
+    )
+    return dict(tags_df.itertuples(index=False))
