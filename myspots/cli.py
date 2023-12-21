@@ -1,9 +1,5 @@
 import sys
-import random
-import time
-import json
 import pathlib
-from textwrap import dedent
 
 from click import group, option, Path, pass_context, prompt
 from loguru import logger
@@ -80,7 +76,7 @@ def add_place(ctx, query, location):
 @option("--hierarchical", is_flag=True)
 @pass_context
 def write_kml(ctx, no_styles, default_invisible, hierarchical):
-    from fastkml import kml, styles
+    from fastkml import kml
     from shapely.geometry import Point
 
     store = NotionMySpotsStore(ctx.obj["config"])
