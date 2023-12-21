@@ -12,7 +12,7 @@ setup(
         "pyyaml",
         "fastkml",
         "googlemaps",
-        "airtable-python-wrapper",
+        "notional",
     ],
     packages=["myspots"],
     entry_points={"console_scripts": ["myspots = myspots.cli:cli"]},
