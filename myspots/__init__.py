@@ -166,12 +166,18 @@ class NotionMySpotsStore:
                 graph.add_edge(category.parent.relation[0].id, category.id)
         return graph
 
-    def iter_places(self):
+    def iter_places(self, sort_oldest_first=False):
         places_db = self.notion.databases.retrieve(self.notion_places_database_id)
         NotionPlace = notional.orm.connected_page(
             session=self.notion, source_db=places_db
         )
-        for place in NotionPlace.query().execute():
+        query = NotionPlace.query()
+        if sort_oldest_first:
+            query = query.sort(
+                property="last_modified",
+                direction=notional.query.SortDirection.ASCENDING,
+            )
+        for place in query.execute():
             yield place
 
 
