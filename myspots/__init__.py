@@ -124,7 +124,7 @@ class NotionMySpotsStore:
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]
 
-    def insert_spot(self, place: GooglePlace):
+    def insert_spot(self, place: GooglePlace, notes: str = None):
         places_db = self.notion.databases.retrieve(self.notion_places_database_id)
         NotionPlace = notional.orm.connected_page(
             session=self.notion, source_db=places_db
@@ -139,6 +139,8 @@ class NotionMySpotsStore:
         }
         if place.website:
             kwargs["website"] = place.website
+        if notes:
+            kwargs["notes"] = notes
         NotionPlace.create(**kwargs)
 
     def spot_exists(self, place_id: GooglePlaceID):
@@ -212,11 +214,8 @@ def get_placemark_style(flags: set[str], google_style_icon_code: str):
     return f"#icon-{google_style_icon_code}-{icon_color}-nodesc"
 
 
-def get_placemark_description(category: str, tags: set[str]):
+def get_placemark_description(category: str, tags: set[str], notes: str):
     tags = " | ".join(tags)
-    # TODO: implement notes
-    logger.debug("Notes not implemented in KML export")
-    notes = ""
     return f"{category}\n{tags}\n{notes}"
 
 
@@ -224,7 +223,7 @@ def kml_add_styles(root_doc, category_graph: DiGraph, no_styles: bool):
     # define styles for placemarks using Google icon ids
     # see: https://github.com/kitchen/kml-icon-converter/blob/master/style_map.csv
     ns = "{http://www.opengis.net/kml/2.2}"
-    root_doc.append_style(
+    root_doc.append(
         styles.Style(
             ns=ns,
             id="icon-1899-757575-nodesc",
@@ -249,4 +248,4 @@ def kml_add_styles(root_doc, category_graph: DiGraph, no_styles: bool):
                         )
                     ],
                 )
-                root_doc.append_style(style)
+                root_doc.append(style)

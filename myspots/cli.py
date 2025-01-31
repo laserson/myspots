@@ -64,6 +64,12 @@ def add_place(ctx, query, location):
     else:
         sys.exit(f"Abort: did not understand selection: {selection}")
 
+    # ask for any notes
+    notes = prompt(
+        "Enter any notes for these places (optional; return to skip)", default=""
+    )
+    notes = None if notes.strip() == "" else notes
+
     # add selected places to MySpots store
     myspots_store = NotionMySpotsStore(config)
     for result in selected_results:
@@ -71,7 +77,7 @@ def add_place(ctx, query, location):
             logger.info("Already exists; skipping {}", result["place_id"])
             continue
         place = get_detailed_place_data(google_maps_client, result["place_id"])
-        myspots_store.insert_spot(place)
+        myspots_store.insert_spot(place, notes)
         logger.info("Added {}", result["place_id"])
 
 
@@ -102,6 +108,7 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     for place in store.iter_places():
         flags = set(f.name for f in place.flags)
         tags = set(t.name for t in place.tags)
+        notes = place.notes
 
         # skip certain places
         if "Permanently Closed" in flags:
@@ -128,15 +135,15 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
                 if not no_styles and category != "Uncategorized"
                 else "#icon-1899-757575-nodesc"
             )
-            description = get_placemark_description(category_name, tags)
+            description = get_placemark_description(category_name, tags, notes)
             p = kml.Placemark(
                 ns=ns,
                 id=str(place.id),
                 name=place.name,
                 styleUrl=style,
                 description=description,
+                geometry=Point(place.longitude, place.latitude),
             )
-            p.geometry = Point(place.longitude, place.latitude)
             folders[category_name].append(p)
 
     visibility = 0 if default_invisible else 1
