@@ -1,0 +1,29 @@
+[project]
+name = "myspots"
+version = "0.0.0"
+description = "Search Google Maps for places and push to Airtable"
+readme = "README.md"
+requires-python = ">=3.8,<3.14"
+dependencies = [
+    "click>=8.1.8",
+    "fastkml>=1.1.0",
+    "googlemaps>=4.10.0",
+    "loguru>=0.7.3",
+    "networkx>=3.1",
+    "notional>=0.4.4",
+    "pyyaml>=6.0.3",
+    "tqdm>=4.67.1",
+]
+authors = [
+    { name = "Uri Laserson", email = "uri.laserson@gmail.com" }
+]
+
+[project.urls]
+Homepage = "https://github.com/laserson/myspots"
+
+[project.scripts]
+myspots = "myspots.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
