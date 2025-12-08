@@ -3,7 +3,7 @@ import pathlib
 import sys
 from time import sleep
 
-import notional
+import ultimate_notion as uno
 from click import Path, group, option, pass_context, prompt
 from googlemaps.exceptions import ApiError
 from loguru import logger
@@ -164,14 +164,8 @@ def refresh_store(ctx, dry_run):
     google_maps_client = get_google_maps_client(ctx.obj["config"])
     store = NotionMySpotsStore(ctx.obj["config"])
 
-    # get the option value datum for "Permanently Closed" to use later
-    flag_options = (
-        store.notion.databases.retrieve(store.notion_places_database_id)
-        .properties["flags"]
-        .multi_select.options
-    )
-    perm_closed_option = [o for o in flag_options if o.name == "Permanently Closed"][0]
-    perm_closed_value = notional.types.SelectValue(**perm_closed_option.dict())
+    # get the database to access schema information
+    places_db = store.notion.get_db(store.notion_places_database_id)
 
     for place in store.iter_places(sort_oldest_first=True):
         sleep(0.1)
@@ -222,10 +216,11 @@ def refresh_store(ctx, dry_run):
                     pass
                 elif action == "u":
                     logger.info("Updating {} bc diff in closure", place.name)
-                    curr_flags = place.flags.multi_select
-                    # if perm closed value is in list twice, Notion correctly merges them
-                    new_flags = curr_flags + [perm_closed_value]
-                    place.flags = notional.types.MultiSelect(multi_select=new_flags)
+                    # In ultimate-notion, we can work with flags more directly
+                    # Get current flag names and add "Permanently Closed" if not present
+                    current_flag_names = set(f.name for f in place.flags)
+                    current_flag_names.add("Permanently Closed")
+                    place.flags = list(current_flag_names)
                     place.google_json_data = json.dumps(data)
                 elif action == "a":
                     sys.exit("Abort")

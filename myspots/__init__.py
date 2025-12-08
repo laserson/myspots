@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
-import notional
+import ultimate_notion as uno
 import yaml
 from fastkml import styles
 from googlemaps import Client
@@ -119,15 +119,15 @@ def get_detailed_place_data(google_maps_client, place_id) -> GooglePlace:
 
 class NotionMySpotsStore:
     def __init__(self, config: dict):
-        self.notion = notional.connect(auth=config["notion_api_token"])
+        from notion_client import Client
+        # Create notion client directly with token, then pass to Session
+        notion_client = Client(auth=config["notion_api_token"])
+        self.notion = uno.Session(client=notion_client)
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]
 
     def insert_spot(self, place: GooglePlace, notes: str = None):
-        places_db = self.notion.databases.retrieve(self.notion_places_database_id)
-        NotionPlace = notional.orm.connected_page(
-            session=self.notion, source_db=places_db
-        )
+        places_db = self.notion.get_db(self.notion_places_database_id)
         kwargs = {
             "name": place.name,
             "address": place.address,
@@ -140,24 +140,19 @@ class NotionMySpotsStore:
             kwargs["website"] = place.website
         if notes:
             kwargs["notes"] = notes
-        NotionPlace.create(**kwargs)
+        places_db.create_page(**kwargs)
 
     def spot_exists(self, place_id: GooglePlaceID):
-        query = self.notion.databases.query(self.notion_places_database_id).filter(
-            property="google_place_id",
-            rich_text=notional.query.TextCondition(equals=place_id),
-        )
-        return query.first() is not None
+        places_db = self.notion.get_db(self.notion_places_database_id)
+        pages = places_db.query.filter(
+            uno.prop("google_place_id") == place_id
+        ).execute()
+        return len(list(pages)) > 0
 
     def category_graph(self) -> DiGraph:
-        categories_db = self.notion.databases.retrieve(
-            self.notion_categories_database_id
-        )
-        NotionCategory = notional.orm.connected_page(
-            session=self.notion, source_db=categories_db
-        )
+        categories_db = self.notion.get_db(self.notion_categories_database_id)
         graph = DiGraph()
-        for category in NotionCategory.query().execute():
+        for category in categories_db.query.execute():
             graph.add_node(
                 category.id,
                 name=category.category,
@@ -168,22 +163,16 @@ class NotionMySpotsStore:
         return graph
 
     def iter_places(self, sort_oldest_first=False):
-        places_db = self.notion.databases.retrieve(self.notion_places_database_id)
-        NotionPlace = notional.orm.connected_page(
-            session=self.notion, source_db=places_db
-        )
-        query = NotionPlace.query()
+        places_db = self.notion.get_db(self.notion_places_database_id)
+        query = places_db.query
         if sort_oldest_first:
-            query = query.sort(
-                property="last_modified",
-                direction=notional.query.SortDirection.ASCENDING,
-            )
+            query = query.sort(uno.prop("last_modified").asc())
         for place in query.execute():
             yield place
 
 
 def get_root_categories(
-    category_graph: DiGraph, place: notional.orm.ConnectedPage
+    category_graph: DiGraph, place
 ) -> list[str]:
     if len(place.primary_category.relation) == 0:
         return ["Uncategorized"]
