@@ -1,15 +1,14 @@
 import json
-from typing import TypeAlias
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 import notional
 import yaml
-from networkx import DiGraph
-from googlemaps import Client
 from fastkml import styles
+from googlemaps import Client
 from loguru import logger
-
+from networkx import DiGraph
 
 ############################################
 # Utils
@@ -222,30 +221,63 @@ def get_placemark_description(category: str, tags: set[str], notes: str):
 def kml_add_styles(root_doc, category_graph: DiGraph, no_styles: bool):
     # define styles for placemarks using Google icon ids
     # see: https://github.com/kitchen/kml-icon-converter/blob/master/style_map.csv
+    
     ns = "{http://www.opengis.net/kml/2.2}"
-    root_doc.append(
-        styles.Style(
+
+    def create_style_map(icon_code: str, color: str) -> styles.StyleMap:
+        style_id = f"icon-{icon_code}-{color}-nodesc"
+        normal_style = styles.Style(
             ns=ns,
-            id="icon-1899-757575-nodesc",
+            id=f"{style_id}-normal",
             styles=[
                 styles.IconStyle(
-                    icon_href="https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png"
+                    ns=ns,
+                    icon_href=f"https://www.gstatic.com/mapspro/images/stock/{icon_code}-{color}.png",
+                    scale=1.0
                 )
-            ],
+            ]
         )
-    )
+        highlight_style = styles.Style(
+            ns=ns,
+            id=f"{style_id}-highlight",
+            styles=[
+                styles.IconStyle(
+                    ns=ns,
+                    icon_href=f"https://www.gstatic.com/mapspro/images/stock/{icon_code}-{color}.png",
+                    scale=1.1
+                )
+            ]
+        )
+        root_doc.append(normal_style)
+        root_doc.append(highlight_style)
+        
+        style_map = styles.StyleMap(
+            ns=ns,
+            id=style_id,
+            pairs=[
+                styles.Pair(
+                    ns=ns,
+                    key=0,  # 0 = normal
+                    style_url=styles.StyleUrl(ns=ns, url=f"#{style_id}-normal")
+                ),
+                styles.Pair(
+                    ns=ns,
+                    key=1,  # 1 = highlight
+                    style_url=styles.StyleUrl(ns=ns, url=f"#{style_id}-highlight")
+                )
+            ]
+        )
+        return style_map
+
+    # Default style for uncategorized places
+    root_doc.append(create_style_map("503", "757575"))  # 503 is the default pin icon
+    
     if not no_styles:
         for _, node in category_graph.nodes(data=True):
             if node.get("google_style_icon_code") is None:
                 continue
+            icon_code = node["google_style_icon_code"]
+            # Create style maps for each state (Favorite, Queued, Visited, default)
             for icon_color in ["0288D1", "F9A825", "558B2F", "757575"]:
-                style = styles.Style(
-                    ns=ns,
-                    id=f"icon-{node['google_style_icon_code']}-{icon_color}-nodesc",
-                    styles=[
-                        styles.IconStyle(
-                            icon_href="https://www.gstatic.com/mapspro/images/stock/503-wht-blank_maps.png"
-                        )
-                    ],
-                )
-                root_doc.append(style)
+                style_map = create_style_map(icon_code, icon_color)
+                root_doc.append(style_map)

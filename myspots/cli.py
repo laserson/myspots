@@ -1,23 +1,24 @@
-import sys
-import pathlib
 import json
+import pathlib
+import sys
 from time import sleep
 
-from click import group, option, Path, pass_context, prompt
+import notional
+from click import Path, group, option, pass_context, prompt
 from googlemaps.exceptions import ApiError
 from loguru import logger
-import notional
+from tqdm import tqdm
 
 from myspots import (
-    get_config,
-    get_google_maps_client,
-    query_places_api,
-    get_detailed_place_data,
     NotionMySpotsStore,
-    get_root_categories,
-    get_placemark_style,
+    get_config,
+    get_detailed_place_data,
+    get_google_maps_client,
     get_placemark_description,
+    get_placemark_style,
+    get_root_categories,
     kml_add_styles,
+    query_places_api,
 )
 
 
@@ -87,7 +88,7 @@ def add_place(ctx, query, location):
 @option("--hierarchical", is_flag=True)
 @pass_context
 def write_kml(ctx, no_styles, default_invisible, hierarchical):
-    from fastkml import kml
+    from fastkml import kml, styles
     from shapely.geometry import Point
 
     store = NotionMySpotsStore(ctx.obj["config"])
@@ -105,7 +106,7 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     k.append(root_doc)
 
     folders = {}
-    for place in store.iter_places():
+    for place in tqdm(store.iter_places(), desc="Processing places"):
         flags = set(f.name for f in place.flags)
         tags = set(t.name for t in place.tags)
         notes = place.notes
@@ -140,7 +141,7 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
                 ns=ns,
                 id=str(place.id),
                 name=place.name,
-                styleUrl=style,
+                style_url=styles.StyleUrl(ns=ns, url=style),
                 description=description,
                 geometry=Point(place.longitude, place.latitude),
             )
