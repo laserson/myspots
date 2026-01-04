@@ -135,6 +135,13 @@ class NotionMySpotsStore:
             "longitude": place.longitude,
             "google_place_id": place.google_place_id,
             "google_json_data": place.google_json_data,
+            "notion_place": {
+                "lat": place.latitude,
+                "lon": place.longitude,
+                "name": place.name,
+                "address": place.address,
+                "google_place_id": place.google_place_id,
+            },
         }
         if place.website:
             kwargs["website"] = place.website
