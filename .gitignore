@@ -90,3 +90,6 @@ ENV/
 
 myspots.yaml
 cache/
+
+# Claude Code session data
+.claude/
