@@ -15,11 +15,11 @@ This project uses [uv](https://github.com/astral-sh/uv) for dependency managemen
 git clone https://github.com/laserson/myspots.git
 cd myspots
 
-# Install dependencies
+# Install dependencies (keeps local .venv in sync for development)
 uv sync
 
-# Install the CLI tool
-uv pip install .
+# Install the CLI tool globally (editable so source changes are reflected immediately)
+uv tool install --editable .
 ```
 
 ## Configuration
