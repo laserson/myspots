@@ -84,6 +84,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .tag-option:hover, .tag-option.highlighted { background: #e3f2fd; }
 
 .section-divider { width: 1px; height: 20px; background: rgba(0,0,0,0.12); flex-shrink: 0; }
+.reset-btn {
+  padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: none; color: #999; border: 1px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+.reset-btn:hover { color: #c62828; border-color: #e57373; }
+.reset-btn.hidden { display: none; }
 
 /* Mobile: stack into rows */
 @media (max-width: 600px) {
@@ -94,6 +103,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   .filter-section { flex-wrap: wrap; }
   .filter-section.tags-section { width: 100%; }
   .tag-input-wrap { flex-grow: 1; }
+  .mapboxgl-ctrl-top-right { top: auto !important; bottom: 30px !important; }
 }
 
 .mapboxgl-popup-content { padding: 12px 16px; max-width: 300px; }
@@ -147,6 +157,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   });
   // Reorder primary cats to match desired order
   primaryCats.sort(function(a, b) { return PRIMARY_CATS.indexOf(a) - PRIMARY_CATS.indexOf(b); });
+  // Push Uncategorized to end of secondary list
+  secondaryCats.sort(function(a, b) {
+    if (a === 'Uncategorized') return 1;
+    if (b === 'Uncategorized') return -1;
+    return a.localeCompare(b);
+  });
 
   // Build GeoJSON
   var geojson = {
@@ -208,7 +224,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
       if (activeCategories.has(cat)) { activeCategories.delete(cat); chip.classList.remove('active'); }
       else { activeCategories.add(cat); chip.classList.add('active'); }
       updateMoreChip();
-      updateHash(); applyFilters();
+      updateHash(); applyFilters(); updateResetBtn();
     });
     catSection.appendChild(chip);
   });
@@ -279,7 +295,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     chip.addEventListener('click', function() {
       if (activeFlags.has(flag)) { activeFlags.delete(flag); chip.classList.remove('active'); }
       else { activeFlags.add(flag); chip.classList.add('active'); }
-      updateHash(); applyFilters();
+      updateHash(); applyFilters(); updateResetBtn();
     });
     flagSection.appendChild(chip);
   });
@@ -316,6 +332,28 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   tagSection.appendChild(tagInputWrap);
   controlsEl.appendChild(tagSection);
 
+  // --- Reset button ---
+  var resetBtn = document.createElement('div');
+  resetBtn.className = 'reset-btn hidden';
+  resetBtn.textContent = 'reset';
+  resetBtn.addEventListener('click', function() {
+    activeCategories.clear();
+    activeFlags.clear();
+    activeTags.clear();
+    controlsEl.querySelectorAll('.chip.active').forEach(function(c) { c.classList.remove('active'); });
+    updateMoreChip();
+    renderTagChips();
+    updateHash();
+    applyFilters();
+    updateResetBtn();
+  });
+  controlsEl.appendChild(resetBtn);
+
+  function updateResetBtn() {
+    var hasAny = activeCategories.size > 0 || activeFlags.size > 0 || activeTags.size > 0;
+    resetBtn.classList.toggle('hidden', !hasAny);
+  }
+
   var highlightedIndex = -1;
 
   function renderTagDropdown() {
@@ -344,6 +382,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     renderTagChips();
     updateHash();
     applyFilters();
+    updateResetBtn();
   }
 
   function removeTag(tag) {
@@ -351,6 +390,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     renderTagChips();
     updateHash();
     applyFilters();
+    updateResetBtn();
   }
 
   function renderTagChips() {
@@ -507,7 +547,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     if (p.tags_str) meta += '<span>' + escHtml(p.tags_str) + '</span>';
     if (meta) html += '<div class="popup-meta">' + meta + '</div>';
     if (p.notes) html += '<div class="popup-notes">' + escHtml(p.notes) + '</div>';
-    if (p.website) html += '<div class="popup-website"><a href="' + escAttr(p.website) + '" target="_blank" rel="noopener">Website</a></div>';
+    var links = '';
+    if (p.website) links += '<a href="' + escAttr(p.website) + '" target="_blank" rel="noopener">Website</a>';
+    var gmapsQuery = encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''));
+    var gmapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + gmapsQuery;
+    if (links) links += ' &middot; ';
+    links += '<a href="' + escAttr(gmapsUrl) + '" target="_blank" rel="noopener">Google Maps</a>';
+    html += '<div class="popup-website">' + links + '</div>';
     return html;
   }
 
