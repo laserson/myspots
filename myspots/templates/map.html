@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MySpots</title>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+#controls {
+  position: absolute; top: 8px; left: 8px; right: 50px; z-index: 1;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.8); backdrop-filter: blur(6px);
+  border-radius: 8px; padding: 6px 10px;
+  border: 1px solid rgba(0,0,0,0.1);
+  font-size: 12px;
+}
+.filter-section { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.filter-section.tags-section { flex-shrink: 1; min-width: 0; }
+.section-label {
+  font-size: 10px; color: #999; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-right: 2px; white-space: nowrap;
+}
+.chip {
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: rgba(240,240,240,0.9); color: #555;
+  border: 1px solid #ddd;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.chip:hover { background: rgba(230,230,230,1); }
+.chip.active { background: #333; color: #fff; border-color: #333; }
+.chip.active:hover { background: #555; border-color: #555; }
+
+/* "More" categories dropdown */
+.more-wrap { position: relative; }
+.more-chip {
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: rgba(240,240,240,0.9); color: #555;
+  border: 1px solid #ddd;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.more-chip:hover { background: rgba(230,230,230,1); }
+.more-chip.has-active { border-color: #333; color: #333; font-weight: 600; }
+.more-dropdown {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0;
+  background: #fff; border: 1px solid #ddd; border-radius: 6px;
+  padding: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 20;
+  min-width: 120px;
+}
+.more-dropdown.open { display: flex; flex-direction: column; gap: 2px; }
+.more-dropdown .chip { display: block; text-align: left; }
+
+/* Tag chips & input */
+.tag-chip {
+  padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.tag-chip .remove {
+  cursor: pointer; font-size: 14px; line-height: 1; color: #1565c0; opacity: 0.6;
+}
+.tag-chip .remove:hover { opacity: 1; }
+.tag-input-wrap { position: relative; flex-shrink: 1; min-width: 70px; }
+.tag-input {
+  width: 100%; padding: 3px 8px; border-radius: 12px; border: 1px solid #ddd;
+  font-size: 12px; outline: none; background: rgba(255,255,255,0.9);
+  min-width: 70px;
+}
+.tag-input:focus { border-color: #90caf9; }
+.tag-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; right: 0;
+  background: #fff; border: 1px solid #ddd; border-radius: 6px;
+  max-height: 180px; overflow-y: auto; margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10;
+}
+.tag-dropdown.open { display: block; }
+.tag-option { padding: 5px 10px; font-size: 12px; cursor: pointer; color: #333; }
+.tag-option:hover, .tag-option.highlighted { background: #e3f2fd; }
+
+.section-divider { width: 1px; height: 20px; background: rgba(0,0,0,0.12); flex-shrink: 0; }
+
+/* Mobile: stack into rows */
+@media (max-width: 600px) {
+  #controls {
+    right: 8px; flex-wrap: wrap; gap: 6px;
+  }
+  .section-divider { display: none; }
+  .filter-section { flex-wrap: wrap; }
+  .filter-section.tags-section { width: 100%; }
+  .tag-input-wrap { flex-grow: 1; }
+}
+
+.mapboxgl-popup-content { padding: 12px 16px; max-width: 300px; }
+.popup-name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.popup-address { color: #666; font-size: 13px; margin-bottom: 6px; }
+.popup-meta { font-size: 12px; color: #888; }
+.popup-meta span { display: inline-block; margin-right: 8px; }
+.popup-notes { font-size: 13px; color: #555; margin-top: 6px; font-style: italic; }
+.popup-website { font-size: 13px; margin-top: 6px; }
+.popup-website a { color: #0288D1; text-decoration: none; }
+.popup-website a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="controls"></div>
+<script>
+(function() {
+  var DATA = __SPOTS_DATA__;
+  var INITIAL_BOUNDS = __INITIAL_BOUNDS__;
+  var CATEGORY_ICONS = {
+    'restaurant': 'restaurant',
+    'bar': 'bar',
+    'groceries': 'grocery',
+    'gym': 'fitness-centre',
+    'landmark': 'monument',
+    'shopping': 'shop',
+    'spa': 'massage',
+    'Uncategorized': 'marker'
+  };
+  var flagNames = ['Favorite', 'Queued', 'Visited'];
+  var allTags = DATA.all_tags || [];
+  var PRIMARY_CATS = ['restaurant', 'bar'];
+
+  function toSlug(s) { return s.toLowerCase().replace(/\s+/g, '-'); }
+
+  function categoryIcon(rootCategories) {
+    for (var i = 0; i < rootCategories.length; i++) {
+      var icon = CATEGORY_ICONS[rootCategories[i]];
+      if (icon) return icon;
+    }
+    return 'marker';
+  }
+
+  // Split categories into primary (always visible) and secondary ("More" dropdown)
+  var primaryCats = [];
+  var secondaryCats = [];
+  DATA.root_categories.sort().forEach(function(cat) {
+    if (PRIMARY_CATS.indexOf(cat) !== -1) primaryCats.push(cat);
+    else secondaryCats.push(cat);
+  });
+  // Reorder primary cats to match desired order
+  primaryCats.sort(function(a, b) { return PRIMARY_CATS.indexOf(a) - PRIMARY_CATS.indexOf(b); });
+
+  // Build GeoJSON
+  var geojson = {
+    type: 'FeatureCollection',
+    features: DATA.places.map(function(p) {
+      var props = {
+        name: p.name,
+        address: p.address || '',
+        website: p.website || '',
+        notes: p.notes || '',
+        flags_str: p.flags.join(', '),
+        tags_str: p.tags.join(', '),
+        categories_str: p.root_categories.join(', '),
+        icon: categoryIcon(p.root_categories),
+        flags_list: '|' + p.flags.join('|') + '|',
+        tags_list: '|' + p.tags.join('|') + '|',
+        cats_list: '|' + p.root_categories.join('|') + '|'
+      };
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+        properties: props
+      };
+    })
+  };
+
+  mapboxgl.accessToken = '__MAPBOX_TOKEN__';
+  var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [(INITIAL_BOUNDS[0] + INITIAL_BOUNDS[2]) / 2, (INITIAL_BOUNDS[1] + INITIAL_BOUNDS[3]) / 2],
+    zoom: 2
+  });
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+  var activeFlags = new Set();
+  var activeCategories = new Set();
+  var activeTags = new Set();
+
+  // Build controls
+  var controlsEl = document.getElementById('controls');
+
+  // --- Categories section ---
+  var catSection = document.createElement('div');
+  catSection.className = 'filter-section';
+  var catLabel = document.createElement('span');
+  catLabel.className = 'section-label';
+  catLabel.textContent = 'Cat';
+  catSection.appendChild(catLabel);
+
+  // Primary category chips (always visible)
+  primaryCats.forEach(function(cat) {
+    var chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = cat;
+    chip.dataset.group = 'cat';
+    chip.dataset.value = cat;
+    chip.addEventListener('click', function() {
+      if (activeCategories.has(cat)) { activeCategories.delete(cat); chip.classList.remove('active'); }
+      else { activeCategories.add(cat); chip.classList.add('active'); }
+      updateMoreChip();
+      updateHash(); applyFilters();
+    });
+    catSection.appendChild(chip);
+  });
+
+  // "More" dropdown for secondary categories
+  if (secondaryCats.length > 0) {
+    var moreWrap = document.createElement('div');
+    moreWrap.className = 'more-wrap';
+    var moreChip = document.createElement('div');
+    moreChip.className = 'more-chip';
+    moreChip.textContent = 'more';
+    moreWrap.appendChild(moreChip);
+
+    var moreDropdown = document.createElement('div');
+    moreDropdown.className = 'more-dropdown';
+    secondaryCats.forEach(function(cat) {
+      var chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.textContent = cat;
+      chip.dataset.group = 'cat';
+      chip.dataset.value = cat;
+      chip.addEventListener('click', function() {
+        if (activeCategories.has(cat)) { activeCategories.delete(cat); chip.classList.remove('active'); }
+        else { activeCategories.add(cat); chip.classList.add('active'); }
+        updateMoreChip();
+        updateHash(); applyFilters();
+      });
+      moreDropdown.appendChild(chip);
+    });
+    moreWrap.appendChild(moreDropdown);
+
+    moreChip.addEventListener('click', function(e) {
+      e.stopPropagation();
+      moreDropdown.classList.toggle('open');
+    });
+
+    catSection.appendChild(moreWrap);
+  }
+
+  function updateMoreChip() {
+    if (!moreChip) return;
+    var count = 0;
+    secondaryCats.forEach(function(c) { if (activeCategories.has(c)) count++; });
+    moreChip.textContent = count > 0 ? 'more (' + count + ')' : 'more';
+    moreChip.classList.toggle('has-active', count > 0);
+  }
+
+  controlsEl.appendChild(catSection);
+
+  // Divider
+  var div1 = document.createElement('div');
+  div1.className = 'section-divider';
+  controlsEl.appendChild(div1);
+
+  // --- Flags section ---
+  var flagSection = document.createElement('div');
+  flagSection.className = 'filter-section';
+  var flagLabel = document.createElement('span');
+  flagLabel.className = 'section-label';
+  flagLabel.textContent = 'Flags';
+  flagSection.appendChild(flagLabel);
+  flagNames.forEach(function(flag) {
+    var chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = flag;
+    chip.dataset.group = 'flag';
+    chip.dataset.value = flag;
+    chip.addEventListener('click', function() {
+      if (activeFlags.has(flag)) { activeFlags.delete(flag); chip.classList.remove('active'); }
+      else { activeFlags.add(flag); chip.classList.add('active'); }
+      updateHash(); applyFilters();
+    });
+    flagSection.appendChild(chip);
+  });
+  controlsEl.appendChild(flagSection);
+
+  // Divider
+  var div2 = document.createElement('div');
+  div2.className = 'section-divider';
+  controlsEl.appendChild(div2);
+
+  // --- Tags section ---
+  var tagSection = document.createElement('div');
+  tagSection.className = 'filter-section tags-section';
+  var tagLabel = document.createElement('span');
+  tagLabel.className = 'section-label';
+  tagLabel.textContent = 'Tags';
+  tagSection.appendChild(tagLabel);
+
+  var tagChipsContainer = document.createElement('span');
+  tagChipsContainer.style.cssText = 'display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;';
+  tagSection.appendChild(tagChipsContainer);
+
+  var tagInputWrap = document.createElement('div');
+  tagInputWrap.className = 'tag-input-wrap';
+  var tagInput = document.createElement('input');
+  tagInput.className = 'tag-input';
+  tagInput.type = 'text';
+  tagInput.placeholder = 'search...';
+  tagInputWrap.appendChild(tagInput);
+
+  var tagDropdown = document.createElement('div');
+  tagDropdown.className = 'tag-dropdown';
+  tagInputWrap.appendChild(tagDropdown);
+  tagSection.appendChild(tagInputWrap);
+  controlsEl.appendChild(tagSection);
+
+  var highlightedIndex = -1;
+
+  function renderTagDropdown() {
+    var query = tagInput.value.toLowerCase().trim();
+    tagDropdown.innerHTML = '';
+    highlightedIndex = -1;
+    if (!query) { tagDropdown.classList.remove('open'); return; }
+    var matches = allTags.filter(function(t) {
+      return t.toLowerCase().indexOf(query) !== -1 && !activeTags.has(t);
+    }).slice(0, 15);
+    if (matches.length === 0) { tagDropdown.classList.remove('open'); return; }
+    matches.forEach(function(tag) {
+      var opt = document.createElement('div');
+      opt.className = 'tag-option';
+      opt.textContent = tag;
+      opt.addEventListener('mousedown', function(e) { e.preventDefault(); addTag(tag); });
+      tagDropdown.appendChild(opt);
+    });
+    tagDropdown.classList.add('open');
+  }
+
+  function addTag(tag) {
+    activeTags.add(tag);
+    tagInput.value = '';
+    tagDropdown.classList.remove('open');
+    renderTagChips();
+    updateHash();
+    applyFilters();
+  }
+
+  function removeTag(tag) {
+    activeTags.delete(tag);
+    renderTagChips();
+    updateHash();
+    applyFilters();
+  }
+
+  function renderTagChips() {
+    tagChipsContainer.innerHTML = '';
+    activeTags.forEach(function(tag) {
+      var chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.innerHTML = escHtml(tag) + ' <span class="remove">&times;</span>';
+      chip.querySelector('.remove').addEventListener('click', function() { removeTag(tag); });
+      tagChipsContainer.appendChild(chip);
+    });
+  }
+
+  tagInput.addEventListener('input', renderTagDropdown);
+  tagInput.addEventListener('focus', renderTagDropdown);
+  tagInput.addEventListener('blur', function() {
+    setTimeout(function() { tagDropdown.classList.remove('open'); }, 150);
+  });
+  tagInput.addEventListener('keydown', function(e) {
+    var options = tagDropdown.querySelectorAll('.tag-option');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      highlightedIndex = Math.min(highlightedIndex + 1, options.length - 1);
+      updateHighlight(options);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      highlightedIndex = Math.max(highlightedIndex - 1, 0);
+      updateHighlight(options);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && options[highlightedIndex]) {
+        addTag(options[highlightedIndex].textContent);
+      }
+    } else if (e.key === 'Escape') {
+      tagDropdown.classList.remove('open');
+      tagInput.blur();
+    }
+  });
+
+  function updateHighlight(options) {
+    for (var i = 0; i < options.length; i++) {
+      options[i].classList.toggle('highlighted', i === highlightedIndex);
+    }
+    if (options[highlightedIndex]) {
+      options[highlightedIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // Close "more" dropdown when clicking elsewhere
+  document.addEventListener('click', function() {
+    if (moreDropdown) moreDropdown.classList.remove('open');
+  });
+
+  // --- Hash parsing/updating ---
+  function parseHash() {
+    var hash = window.location.hash.replace('#', '');
+    if (!hash) return;
+    var pairs = hash.split('&');
+    pairs.forEach(function(pair) {
+      var kv = pair.split('=');
+      if (kv.length !== 2) return;
+      var key = kv[0];
+      var values = decodeURIComponent(kv[1]).split(',').filter(Boolean);
+      if (key === 'cats') {
+        var catSlugs = DATA.root_categories.map(toSlug);
+        values.forEach(function(slug) {
+          var idx = catSlugs.indexOf(slug);
+          if (idx !== -1) activeCategories.add(DATA.root_categories[idx]);
+        });
+      } else if (key === 'flags') {
+        var flagSlugs = flagNames.map(toSlug);
+        values.forEach(function(slug) {
+          var idx = flagSlugs.indexOf(slug);
+          if (idx !== -1) activeFlags.add(flagNames[idx]);
+        });
+      } else if (key === 'tags') {
+        values.forEach(function(tag) {
+          if (allTags.indexOf(tag) !== -1) activeTags.add(tag);
+        });
+      }
+    });
+    // Sync chip UI state
+    controlsEl.querySelectorAll('.chip').forEach(function(chip) {
+      if (chip.dataset.group === 'cat' && activeCategories.has(chip.dataset.value)) chip.classList.add('active');
+      if (chip.dataset.group === 'flag' && activeFlags.has(chip.dataset.value)) chip.classList.add('active');
+    });
+    updateMoreChip();
+    renderTagChips();
+  }
+
+  function updateHash() {
+    var parts = [];
+    if (activeCategories.size > 0) {
+      var cats = [];
+      activeCategories.forEach(function(c) { cats.push(toSlug(c)); });
+      parts.push('cats=' + cats.join(','));
+    }
+    if (activeFlags.size > 0) {
+      var flags = [];
+      activeFlags.forEach(function(f) { flags.push(toSlug(f)); });
+      parts.push('flags=' + flags.join(','));
+    }
+    if (activeTags.size > 0) {
+      var tags = [];
+      activeTags.forEach(function(t) { tags.push(encodeURIComponent(t)); });
+      parts.push('tags=' + tags.join(','));
+    }
+    if (parts.length > 0) {
+      history.replaceState(null, '', '#' + parts.join('&'));
+    } else {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  }
+
+  // --- Filter logic ---
+  // Categories: OR, Flags: AND, Tags: AND, groups AND together
+  function applyFilters() {
+    var hasFilters = activeCategories.size > 0 || activeFlags.size > 0 || activeTags.size > 0;
+    if (!hasFilters) {
+      map.setFilter('spots-icons', null);
+      return;
+    }
+    var parts = ['all'];
+
+    if (activeCategories.size > 0) {
+      var catPart = ['any'];
+      activeCategories.forEach(function(c) {
+        catPart.push(['in', '|' + c + '|', ['get', 'cats_list']]);
+      });
+      parts.push(catPart);
+    }
+
+    if (activeFlags.size > 0) {
+      activeFlags.forEach(function(f) {
+        parts.push(['in', '|' + f + '|', ['get', 'flags_list']]);
+      });
+    }
+
+    if (activeTags.size > 0) {
+      activeTags.forEach(function(t) {
+        parts.push(['in', '|' + t + '|', ['get', 'tags_list']]);
+      });
+    }
+
+    map.setFilter('spots-icons', parts.length > 1 ? parts : null);
+  }
+
+  function makePopupHTML(p) {
+    var html = '<div class="popup-name">' + escHtml(p.name) + '</div>';
+    if (p.address) html += '<div class="popup-address">' + escHtml(p.address) + '</div>';
+    var meta = '';
+    if (p.categories_str) meta += '<span>' + escHtml(p.categories_str) + '</span>';
+    if (p.flags_str) meta += '<span>' + escHtml(p.flags_str) + '</span>';
+    if (p.tags_str) meta += '<span>' + escHtml(p.tags_str) + '</span>';
+    if (meta) html += '<div class="popup-meta">' + meta + '</div>';
+    if (p.notes) html += '<div class="popup-notes">' + escHtml(p.notes) + '</div>';
+    if (p.website) html += '<div class="popup-website"><a href="' + escAttr(p.website) + '" target="_blank" rel="noopener">Website</a></div>';
+    return html;
+  }
+
+  function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  map.on('load', function() {
+    parseHash();
+
+    map.getStyle().layers.forEach(function(layer) {
+      if (layer.type === 'symbol' && /poi/i.test(layer.id)) {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    });
+
+    map.addSource('spots', { type: 'geojson', data: geojson });
+
+    map.addLayer({
+      id: 'spots-icons',
+      type: 'symbol',
+      source: 'spots',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': 1.2,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true
+      }
+    });
+
+    applyFilters();
+
+    map.fitBounds(
+      [[INITIAL_BOUNDS[0], INITIAL_BOUNDS[1]], [INITIAL_BOUNDS[2], INITIAL_BOUNDS[3]]],
+      { padding: 50, maxZoom: 14, animate: false }
+    );
+
+    map.on('click', 'spots-icons', function(e) {
+      var props = e.features[0].properties;
+      var coords = e.features[0].geometry.coordinates.slice();
+      while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
+        coords[0] += e.lngLat.lng > coords[0] ? 360 : -360;
+      }
+      new mapboxgl.Popup({ offset: 15 })
+        .setLngLat(coords)
+        .setHTML(makePopupHTML(props))
+        .addTo(map);
+    });
+
+    map.on('mouseenter', 'spots-icons', function() { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'spots-icons', function() { map.getCanvas().style.cursor = ''; });
+  });
+})();
+</script>
+</body>
+</html>

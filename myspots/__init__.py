@@ -162,11 +162,12 @@ class NotionMySpotsStore:
         for category in categories_db.query.execute():
             graph.add_node(
                 category.id,
-                name=category.category,
-                google_style_icon_code=category.google_style_icon_code,
+                name=category.props["category"],
+                google_style_icon_code=category.props["google_style_icon_code"],
             )
-            if len(category.parent.relation) > 0:
-                graph.add_edge(category.parent.relation[0].id, category.id)
+            parent = category.props["parent"]
+            if parent:
+                graph.add_edge(parent[0].id, category.id)
         return graph
 
     def iter_places(self, sort_oldest_first=False):
@@ -181,10 +182,11 @@ class NotionMySpotsStore:
 def get_root_categories(
     category_graph: DiGraph, place
 ) -> list[str]:
-    if len(place.primary_category.relation) == 0:
+    primary_category = place.props["primary_category"]
+    if not primary_category:
         return ["Uncategorized"]
     root_categories = []
-    for category_ref in place.primary_category.relation:
+    for category_ref in primary_category:
         root_category_id = category_ref.id
         while category_graph.in_degree(root_category_id) > 0:
             root_category_id = list(category_graph.predecessors(root_category_id))[0]

@@ -107,9 +107,9 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
 
     folders = {}
     for place in tqdm(store.iter_places(), desc="Processing places"):
-        flags = set(f.name for f in place.flags)
-        tags = set(t.name for t in place.tags)
-        notes = place.notes
+        flags = set(f.name for f in (place.props["flags"] or []))
+        tags = set(t.name for t in (place.props["tags"] or []))
+        notes = place.props["notes"]
 
         # skip certain places
         if "Permanently Closed" in flags:
@@ -140,10 +140,10 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
             p = kml.Placemark(
                 ns=ns,
                 id=str(place.id),
-                name=place.name,
+                name=place.title,
                 style_url=styles.StyleUrl(ns=ns, url=style),
                 description=description,
-                geometry=Point(place.longitude, place.latitude),
+                geometry=Point(place.props["longitude"], place.props["latitude"]),
             )
             folders[category_name].append(p)
 
@@ -155,6 +155,31 @@ def write_kml(ctx, no_styles, default_invisible, hierarchical):
     kml_add_styles(root_doc, category_graph, no_styles)
 
     print(k.to_string(prettyprint=True))
+
+
+@cli.command(name="build-site")
+@option("--output-dir", default="docs", type=Path(), help="Output directory (default: docs)")
+@option("--mapbox-token", default=None, help="Mapbox access token")
+@pass_context
+def build_site(ctx, output_dir, mapbox_token):
+    import os
+
+    from myspots.site import build_site_data, render_site, write_site
+
+    config = ctx.obj["config"]
+
+    # Resolve token: CLI flag > config file > env var
+    token = mapbox_token or config.get("mapbox_access_token") or os.environ.get("MAPBOX_ACCESS_TOKEN")
+    if not token:
+        sys.exit("Mapbox access token required. Use --mapbox-token, set mapbox_access_token in cred.yaml, or set MAPBOX_ACCESS_TOKEN env var.")
+
+    store = NotionMySpotsStore(config)
+    category_graph = store.category_graph()
+    data = build_site_data(store, category_graph)
+    html = render_site(data, token)
+    out = pathlib.Path(output_dir)
+    write_site(html, out)
+    logger.info("Wrote site to {}", out / "index.html")
 
 
 @cli.command(name="refresh-store")
@@ -169,29 +194,29 @@ def refresh_store(ctx, dry_run):
 
     for place in store.iter_places(sort_oldest_first=True):
         sleep(0.1)
-        logger.debug("Processing {}", place.name)
+        logger.debug("Processing {}", place.title)
         try:
             data = json.loads(
                 get_detailed_place_data(
-                    google_maps_client, place.google_place_id
+                    google_maps_client, place.props["google_place_id"]
                 ).google_json_data
             )
         except ApiError as e:
             if e.status == "NOT_FOUND":
-                logger.warning(f"{place.name} place id NOT_FOUND")
+                logger.warning(f"{place.title} place id NOT_FOUND")
                 continue
 
         # refresh Place ID and JSON data
-        if data["place_id"] != place.google_place_id:
-            logger.info(f"{place.name}: PLACE DATA needs update")
+        if data["place_id"] != place.props["google_place_id"]:
+            logger.info(f"{place.title}: PLACE DATA needs update")
             if not dry_run:
                 action = prompt("Select action: [s]kip, [u]pdate, [a]bort", default="s")
                 if action == "s":
                     pass
                 elif action == "u":
-                    place.google_place_id = data["place_id"]
-                    place.google_json_data = json.dumps(data)
-                    logger.info("Updated {}", place.name)
+                    place.props["google_place_id"] = data["place_id"]
+                    place.props["google_json_data"] = json.dumps(data)
+                    logger.info("Updated {}", place.title)
                 elif action == "a":
                     sys.exit("Abort")
                 else:
@@ -203,25 +228,25 @@ def refresh_store(ctx, dry_run):
         )
         myspots_status = (
             "CLOSED"
-            if "Permanently Closed" in set(f.name for f in place.flags)
+            if "Permanently Closed" in set(f.name for f in (place.props["flags"] or []))
             else "OPEN"
         )
         if google_status != myspots_status:
             logger.info(
-                f"{place.name}: we say {myspots_status} but Google says {google_status}"
+                f"{place.title}: we say {myspots_status} but Google says {google_status}"
             )
             if not dry_run:
                 action = prompt("Select action: [s]kip, [u]pdate, [a]bort", default="s")
                 if action == "s":
                     pass
                 elif action == "u":
-                    logger.info("Updating {} bc diff in closure", place.name)
+                    logger.info("Updating {} bc diff in closure", place.title)
                     # In ultimate-notion, we can work with flags more directly
                     # Get current flag names and add "Permanently Closed" if not present
-                    current_flag_names = set(f.name for f in place.flags)
+                    current_flag_names = set(f.name for f in (place.props["flags"] or []))
                     current_flag_names.add("Permanently Closed")
-                    place.flags = list(current_flag_names)
-                    place.google_json_data = json.dumps(data)
+                    place.props["flags"] = list(current_flag_names)
+                    place.props["google_json_data"] = json.dumps(data)
                 elif action == "a":
                     sys.exit("Abort")
                 else:

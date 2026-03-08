@@ -31,6 +31,7 @@ google_api_key: YOUR_GOOGLE_MAPS_API_KEY
 notion_api_token: YOUR_NOTION_API_TOKEN
 notion_places_database_id: YOUR_NOTION_PLACES_DATABASE_ID
 notion_categories_database_id: YOUR_NOTION_CATEGORIES_DATABASE_ID
+mapbox_access_token: YOUR_MAPBOX_TOKEN
 ```
 
 ### Notion Database Setup
