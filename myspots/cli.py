@@ -166,6 +166,10 @@ def build_site(ctx, output_dir, mapbox_token):
 
     from myspots.site import build_site_data, render_site, write_site
 
+    repo_root = pathlib.Path(__file__).resolve().parent.parent
+    if pathlib.Path.cwd().resolve() != repo_root:
+        sys.exit(f"Error: build-site must be run from the repository root: {repo_root}")
+
     config = ctx.obj["config"]
 
     # Resolve token: CLI flag > config file > env var
