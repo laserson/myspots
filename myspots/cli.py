@@ -38,6 +38,16 @@ def cli(ctx, config_path):
     ctx.obj["config"] = get_config(config_path)
 
 
+@cli.command(name="add")
+@option("--refresh-cache", is_flag=True, help="Force refresh of cached categories/tags/flags")
+@pass_context
+def add_tui(ctx, refresh_cache):
+    from myspots.tui import MySpotsApp
+
+    app = MySpotsApp(config=ctx.obj["config"], refresh_cache=refresh_cache)
+    app.run()
+
+
 @cli.command(name="add-place")
 @option("-q", "--query", prompt=True)
 @option("-l", "--location", help="location to do search from (gets geocoded)")

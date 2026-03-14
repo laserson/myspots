@@ -65,15 +65,14 @@ def query_places_api(google_maps_client: Client, query, location=None):
     query : str
         Search query to use.
     location : str, optional
-        Location to search around, by default None
+        Location to append to query for geographic context, by default None
 
     Returns
     -------
     list
         List of results from the Google Places API.
     """
-    latlng = location_to_latlng(google_maps_client, location) if location else None
-    places_api_response = google_maps_client.places(query, location=latlng)
+    places_api_response = google_maps_client.places(query, location=location)
     if places_api_response["status"] != "OK":
         logger.error(
             "Failed to query places API for {}\n{}", query, places_api_response
@@ -126,7 +125,7 @@ class NotionMySpotsStore:
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]
 
-    def insert_spot(self, place: GooglePlace, notes: str = None):
+    def insert_spot(self, place: GooglePlace, notes=None, category_ids=None, tags=None, flags=None):
         places_db = self.notion.get_db(self.notion_places_database_id)
         kwargs = {
             "name": place.name,
@@ -147,7 +146,53 @@ class NotionMySpotsStore:
             kwargs["website"] = place.website
         if notes:
             kwargs["notes"] = notes
-        places_db.create_page(**kwargs)
+        page = places_db.create_page(**kwargs)
+
+        # Set category relations (two-step: create page, then set props)
+        if category_ids:
+            cat_pages = [self.notion.get_page(cid) for cid in category_ids]
+            page.props["primary_category"] = cat_pages
+
+        if tags:
+            page.props["tags"] = tags
+
+        if flags:
+            page.props["flags"] = flags
+
+    def fetch_tag_options(self) -> list[str]:
+        """Get available tag names from places DB schema."""
+        places_db = self.notion.get_db(self.notion_places_database_id)
+        tags_prop = places_db.schema.get_prop("tags")
+        return [opt.name for opt in tags_prop.options]
+
+    def fetch_flag_options(self) -> list[str]:
+        """Get available flag names from places DB schema."""
+        places_db = self.notion.get_db(self.notion_places_database_id)
+        flags_prop = places_db.schema.get_prop("flags")
+        return [opt.name for opt in flags_prop.options]
+
+    def fetch_categories(self) -> list[dict]:
+        """Get all categories with id, name, parent_id."""
+        categories_db = self.notion.get_db(self.notion_categories_database_id)
+        result = []
+        for category in categories_db.query.execute():
+            parent = category.props["parent"]
+            parent_id = parent[0].id if parent else None
+            result.append({
+                "id": str(category.id),
+                "name": str(category.props["category"]),
+                "parent_id": str(parent_id) if parent_id else None,
+            })
+        return result
+
+    def fetch_known_place_ids(self) -> set[str]:
+        """Get all google_place_ids currently in the places DB."""
+        result = set()
+        for place in self.iter_places():
+            pid = place.props.get("google_place_id")
+            if pid:
+                result.add(pid)
+        return result
 
     def spot_exists(self, place_id: GooglePlaceID):
         places_db = self.notion.get_db(self.notion_places_database_id)

@@ -59,9 +59,32 @@ You'll need two Notion databases:
 
 ## Usage
 
-### Add a Place
+### Add Places (TUI)
 
-Search for places on Google Maps and add them to your Notion database:
+Interactive terminal UI for searching, selecting, and annotating places:
+
+```bash
+myspots add
+
+# Force refresh cached categories/tags/flags
+myspots add --refresh-cache
+```
+
+Two-column layout: search and results on the left, annotation (categories, tags, flags, notes) on the right. Key bindings:
+
+- **Enter** — search / toggle result selection / select category or tag
+- **Tab** — move to annotation fields
+- **Shift+Tab** — back to results
+- **Space** — toggle flag checkboxes
+- **Ctrl+S** — submit selected places to Notion
+- **Ctrl+R** — reset form
+- **Escape** — quit
+
+Categories, tags, and flags are cached locally (`~/.config/myspots/cache.json`, 24h TTL) for instant startup. Location is remembered across sessions. Existing places in Notion are marked with a yellow star.
+
+### Add a Place (CLI)
+
+Simpler CLI prompt flow (no annotation):
 
 ```bash
 myspots add-place
@@ -72,12 +95,6 @@ myspots add-place --location "Brooklyn, NY"
 # Non-interactive mode
 myspots add-place --query "Joe's Pizza"
 ```
-
-The command will:
-1. Search Google Maps for your query
-2. Display results for selection
-3. Prompt for optional notes
-4. Add selected places to Notion
 
 ### Refresh Place Data
 
@@ -120,7 +137,9 @@ myspots --config /path/to/config.yaml add-place
 myspots/
 ├── myspots/
 │   ├── __init__.py      # Core functions and data models
-│   └── cli.py           # CLI commands
+│   ├── cache.py         # Local JSON cache for categories, tags, flags
+│   ├── cli.py           # CLI commands
+│   └── tui.py           # Textual TUI for `myspots add`
 ├── scripts/             # Utility scripts
 ├── pyproject.toml       # Project metadata and dependencies
 └── README.md
@@ -130,6 +149,7 @@ myspots/
 
 - `googlemaps` - Google Maps API client
 - `ultimate-notion` - Notion API wrapper
+- `textual` - Terminal UI framework
 - `fastkml` - KML file generation
 - `click` - CLI framework
 - `loguru` - Logging
