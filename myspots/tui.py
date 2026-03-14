@@ -111,7 +111,6 @@ OptionList {
 
 #flags-container {
     height: auto;
-    layout: horizontal;
     margin-top: 1;
 }
 
@@ -196,7 +195,7 @@ class MySpotsApp(App):
                 yield Input(placeholder="type to add…", id="tag-input")
                 yield OptionList(id="tag-suggestions")
                 yield Label("Flags", classes="field-label")
-                yield Horizontal(id="flags-container")
+                yield Vertical(id="flags-container")
                 yield Label("Notes", classes="field-label")
                 yield TextArea(id="notes-area")
                 yield Static(
@@ -223,9 +222,16 @@ class MySpotsApp(App):
             self.cache.save()
         self.app.call_from_thread(self._populate_flags)
 
+    _FLAG_ORDER = ["Visited", "Queued", "Favorite", "Lame", "Permanently Closed"]
+    _FLAG_HIDDEN = {"Reviewed"}
+
     def _populate_flags(self) -> None:
-        container = self.query_one("#flags-container", Horizontal)
-        for flag_name in self.cache.flags:
+        container = self.query_one("#flags-container", Vertical)
+        ordered = [f for f in self._FLAG_ORDER if f in self.cache.flags]
+        ordered += [f for f in self.cache.flags if f not in self._FLAG_ORDER and f not in self._FLAG_HIDDEN]
+        for flag_name in ordered:
+            if flag_name in self._FLAG_HIDDEN:
+                continue
             cb = FlagCheckbox(flag_name, id=_flag_id(flag_name))
             container.mount(cb)
 
