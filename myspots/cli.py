@@ -7,17 +7,13 @@ import ultimate_notion as uno
 from click import Path, group, option, pass_context, prompt
 from googlemaps.exceptions import ApiError
 from loguru import logger
-from tqdm import tqdm
 
 from myspots import (
     NotionMySpotsStore,
+    build_kml,
     get_config,
     get_detailed_place_data,
     get_google_maps_client,
-    get_placemark_description,
-    get_placemark_style,
-    get_root_categories,
-    kml_add_styles,
     query_places_api,
 )
 
@@ -33,6 +29,7 @@ from myspots import (
 )
 @pass_context
 def cli(ctx, config_path):
+    """Manage your favorite places with Google Maps and Notion."""
     logger.add(sys.stderr, level="INFO")
     ctx.ensure_object(dict)
     ctx.obj["config"] = get_config(config_path)
@@ -42,6 +39,11 @@ def cli(ctx, config_path):
 @option("--refresh-cache", is_flag=True, help="Force refresh of cached categories/tags/flags")
 @pass_context
 def add_tui(ctx, refresh_cache):
+    """Interactive TUI for searching, selecting, and annotating places.
+
+    Search Google Maps, multi-select results, assign categories/tags/flags,
+    and push to Notion — all in one screen.
+    """
     from myspots.tui import MySpotsApp
 
     app = MySpotsApp(config=ctx.obj["config"], refresh_cache=refresh_cache)
@@ -53,6 +55,7 @@ def add_tui(ctx, refresh_cache):
 @option("-l", "--location", help="location to do search from (gets geocoded)")
 @pass_context
 def add_place(ctx, query, location):
+    """Search Google Maps and add places to Notion (simple CLI prompt flow)."""
     config = ctx.obj["config"]
 
     # search google maps for places
@@ -93,96 +96,25 @@ def add_place(ctx, query, location):
 
 
 @cli.command(name="write-kml")
-@option("--no-styles", is_flag=True)
-@option("--default-invisible", is_flag=True)
-@option("--hierarchical", is_flag=True)
+@option("--no-styles", is_flag=True, help="Use default pin style for all places")
+@option("--default-invisible", is_flag=True, help="Set folder visibility to off by default")
 @pass_context
-def write_kml(ctx, no_styles, default_invisible, hierarchical):
-    from fastkml import kml, styles
-    from shapely.geometry import Point
-
+def write_kml(ctx, no_styles, default_invisible):
+    """Export all places to KML (stdout) for Google Earth / My Maps."""
     store = NotionMySpotsStore(ctx.obj["config"])
     category_graph = store.category_graph()
-
-    # construct KML containers - works bc of mutability
-    ns = "{http://www.opengis.net/kml/2.2}"
-    k = kml.KML()
-    root_doc = kml.Document(
-        ns=ns,
-        id="myspots-document-id",
-        name="myspots-document-name",
-        description="myspots-document-description",
-    )
-    k.append(root_doc)
-
-    folders = {}
-    for place in tqdm(store.iter_places(), desc="Processing places"):
-        flags = set(f.name for f in (place.props["flags"] or []))
-        tags = set(t.name for t in (place.props["tags"] or []))
-        notes = place.props["notes"]
-
-        # skip certain places
-        if "Permanently Closed" in flags:
-            continue
-        if "Lame" in flags:
-            continue
-
-        # each place may have multiple categories; process for each
-        for category in get_root_categories(category_graph, place):
-            category_name = (
-                category_graph.nodes[category]["name"]
-                if category != "Uncategorized"
-                else "Uncategorized"
-            )
-            if category_name not in folders:
-                folders[category_name] = kml.Folder(
-                    ns=ns, id=category_name, name=category_name
-                )
-                root_doc.append(folders[category_name])
-            style = (
-                get_placemark_style(
-                    flags, category_graph.nodes[category]["google_style_icon_code"]
-                )
-                if not no_styles and category != "Uncategorized"
-                else "#icon-1899-757575-nodesc"
-            )
-            description = get_placemark_description(category_name, tags, notes)
-            p = kml.Placemark(
-                ns=ns,
-                id=str(place.id),
-                name=place.title,
-                style_url=styles.StyleUrl(ns=ns, url=style),
-                description=description,
-                geometry=Point(place.props["longitude"], place.props["latitude"]),
-            )
-            folders[category_name].append(p)
-
-    visibility = 0 if default_invisible else 1
-    for container in folders.values():
-        container.visibility = visibility
-    root_doc.visibility = 1
-
-    kml_add_styles(root_doc, category_graph, no_styles)
-
-    print(k.to_string(prettyprint=True))
+    print(build_kml(store, category_graph, no_styles, default_invisible))
 
 
-@cli.command(name="build-site")
-@option("--output-dir", default="docs", type=Path(), help="Output directory (default: docs)")
-@option("--mapbox-token", default=None, help="Mapbox access token")
-@pass_context
-def build_site(ctx, output_dir, mapbox_token):
+def _repo_root() -> pathlib.Path:
+    return pathlib.Path(__file__).resolve().parent.parent
+
+
+def _build(config, output_dir=None, mapbox_token=None) -> pathlib.Path:
     import os
 
     from myspots.site import build_site_data, render_site, write_site
 
-    repo_root = pathlib.Path(__file__).resolve().parent.parent
-    if pathlib.Path.cwd().resolve() != repo_root:
-        sys.exit(f"Error: build-site must be run from the repository root: {repo_root}")
-
-    config = ctx.obj["config"]
-
-    # Resolve token: CLI flag > config file > env var
     token = mapbox_token or config.get("mapbox_access_token") or os.environ.get("MAPBOX_ACCESS_TOKEN")
     if not token:
         sys.exit("Mapbox access token required. Use --mapbox-token, set mapbox_access_token in cred.yaml, or set MAPBOX_ACCESS_TOKEN env var.")
@@ -191,15 +123,53 @@ def build_site(ctx, output_dir, mapbox_token):
     category_graph = store.category_graph()
     data = build_site_data(store, category_graph)
     html = render_site(data, token)
-    out = pathlib.Path(output_dir)
+    out = pathlib.Path(output_dir) if output_dir else _repo_root() / "docs"
     write_site(html, out)
     logger.info("Wrote site to {}", out / "index.html")
+    return out
+
+
+@cli.command(name="build-site")
+@option("--output-dir", default=None, type=Path(), help="Output directory (default: docs/ in repo root)")
+@option("--mapbox-token", default=None, help="Mapbox access token")
+@pass_context
+def build_site(ctx, output_dir, mapbox_token):
+    """Build the static map site from Notion data."""
+    _build(ctx.obj["config"], output_dir, mapbox_token)
+
+
+@cli.command(name="deploy")
+@option("--mapbox-token", default=None, help="Mapbox access token")
+@pass_context
+def deploy(ctx, mapbox_token):
+    """Build the site, commit, and push to GitHub Pages. No-ops if nothing changed."""
+    import subprocess
+
+    out = _build(ctx.obj["config"], mapbox_token=mapbox_token)
+    repo_root = _repo_root()
+
+    result = subprocess.run(
+        ["git", "diff", "--quiet", str(out)],
+        cwd=repo_root,
+    )
+    if result.returncode == 0:
+        logger.info("No changes to deploy")
+        return
+
+    subprocess.run(["git", "add", str(out)], cwd=repo_root, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Rebuild site"],
+        cwd=repo_root, check=True,
+    )
+    subprocess.run(["git", "push"], cwd=repo_root, check=True)
+    logger.info("Deployed")
 
 
 @cli.command(name="refresh-store")
 @option("--dry-run", is_flag=True)
 @pass_context
 def refresh_store(ctx, dry_run):
+    """Sync Notion places with Google Maps (updated place IDs, closures)."""
     google_maps_client = get_google_maps_client(ctx.obj["config"])
     store = NotionMySpotsStore(ctx.obj["config"])
 

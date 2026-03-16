@@ -3,9 +3,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
+import lxml.etree
 import ultimate_notion as uno
 import yaml
-from fastkml import styles
 from googlemaps import Client
 from loguru import logger
 from networkx import DiGraph
@@ -243,84 +243,102 @@ def get_root_categories(
 # KML export utils
 ############################################
 
-
-def get_placemark_style(flags: set[str], google_style_icon_code: str):
-    if "Favorite" in flags:
-        icon_color = "F9A825"  # yellow
-    elif "Queued" in flags:
-        icon_color = "558B2F"  # green
-    elif "Visited" in flags:
-        icon_color = "0288D1"  # blue
-    else:
-        icon_color = "757575"  # gray
-    return f"#icon-{google_style_icon_code}-{icon_color}-nodesc"
-
-
-def get_placemark_description(category: str, tags: set[str], notes: str):
-    tags = " | ".join(tags)
-    return f"{category}\n{tags}\n{notes}"
+KML_NS = "http://www.opengis.net/kml/2.2"
+ICON_BASE_URL = "https://www.gstatic.com/mapspro/images/stock"
+# Flag → color mapping for icon styles
+# see: https://github.com/kitchen/kml-icon-converter/blob/master/style_map.csv
+FLAG_COLORS = [
+    ("Favorite", "F9A825"),   # yellow
+    ("Queued", "558B2F"),     # green
+    ("Visited", "0288D1"),    # blue
+]
+DEFAULT_COLOR = "757575"      # gray
+DEFAULT_ICON_CODE = "503"     # default pin
 
 
-def kml_add_styles(root_doc, category_graph: DiGraph, no_styles: bool):
-    # define styles for placemarks using Google icon ids
-    # see: https://github.com/kitchen/kml-icon-converter/blob/master/style_map.csv
-    
-    ns = "{http://www.opengis.net/kml/2.2}"
+def _kml_sub(parent, tag, text=None, **attribs):
+    el = lxml.etree.SubElement(parent, f"{{{KML_NS}}}{tag}", **attribs)
+    if text is not None:
+        el.text = str(text)
+    return el
 
-    def create_style_map(icon_code: str, color: str) -> styles.StyleMap:
-        style_id = f"icon-{icon_code}-{color}-nodesc"
-        normal_style = styles.Style(
-            ns=ns,
-            id=f"{style_id}-normal",
-            styles=[
-                styles.IconStyle(
-                    ns=ns,
-                    icon_href=f"https://www.gstatic.com/mapspro/images/stock/{icon_code}-{color}.png",
-                    scale=1.0
-                )
-            ]
-        )
-        highlight_style = styles.Style(
-            ns=ns,
-            id=f"{style_id}-highlight",
-            styles=[
-                styles.IconStyle(
-                    ns=ns,
-                    icon_href=f"https://www.gstatic.com/mapspro/images/stock/{icon_code}-{color}.png",
-                    scale=1.1
-                )
-            ]
-        )
-        root_doc.append(normal_style)
-        root_doc.append(highlight_style)
-        
-        style_map = styles.StyleMap(
-            ns=ns,
-            id=style_id,
-            pairs=[
-                styles.Pair(
-                    ns=ns,
-                    key=0,  # 0 = normal
-                    style_url=styles.StyleUrl(ns=ns, url=f"#{style_id}-normal")
-                ),
-                styles.Pair(
-                    ns=ns,
-                    key=1,  # 1 = highlight
-                    style_url=styles.StyleUrl(ns=ns, url=f"#{style_id}-highlight")
-                )
-            ]
-        )
-        return style_map
 
-    # Default style for uncategorized places
-    root_doc.append(create_style_map("503", "757575"))  # 503 is the default pin icon
-    
+def _icon_color_for_flags(flags: set[str]) -> str:
+    for flag, color in FLAG_COLORS:
+        if flag in flags:
+            return color
+    return DEFAULT_COLOR
+
+
+def _add_style_map(doc, icon_code: str, color: str):
+    """Add a Style (normal), Style (highlight), and StyleMap to a Document."""
+    style_id = f"icon-{icon_code}-{color}-nodesc"
+    icon_url = f"{ICON_BASE_URL}/{icon_code}-{color}.png"
+
+    for suffix, scale in [("normal", "1.0"), ("highlight", "1.1")]:
+        style = _kml_sub(doc, "Style", id=f"{style_id}-{suffix}")
+        icon_style = _kml_sub(style, "IconStyle")
+        _kml_sub(icon_style, "scale", scale)
+        icon = _kml_sub(icon_style, "Icon")
+        _kml_sub(icon, "href", icon_url)
+
+    style_map = _kml_sub(doc, "StyleMap", id=style_id)
+    for key, suffix in [("normal", "normal"), ("highlight", "highlight")]:
+        pair = _kml_sub(style_map, "Pair")
+        _kml_sub(pair, "key", key)
+        _kml_sub(pair, "styleUrl", f"#{style_id}-{suffix}")
+
+
+def build_kml(store, category_graph: DiGraph, no_styles: bool, default_invisible: bool) -> str:
+    """Build a KML string from the places store."""
+    root = lxml.etree.Element(f"{{{KML_NS}}}kml", nsmap={None: KML_NS})
+    doc = _kml_sub(root, "Document")
+    _kml_sub(doc, "name", "MySpots")
+
+    # Add styles
+    _add_style_map(doc, DEFAULT_ICON_CODE, DEFAULT_COLOR)
     if not no_styles:
         for _, node in category_graph.nodes(data=True):
-            if node.get("google_style_icon_code") is None:
+            icon_code = node.get("google_style_icon_code")
+            if icon_code is None:
                 continue
-            icon_code = node["google_style_icon_code"]
-            # Create style maps for each state (Favorite, Queued, Visited, default)
-            for icon_color in ["0288D1", "F9A825", "558B2F", "757575"]:
-                style_map = create_style_map(icon_code, icon_color)
-                root_doc.append(style_map)
+            for _, color in FLAG_COLORS:
+                _add_style_map(doc, icon_code, color)
+            _add_style_map(doc, icon_code, DEFAULT_COLOR)
+
+    # Add placemarks grouped by root category
+    folders = {}
+    for place in store.iter_places():
+        flags = set(f.name for f in (place.props["flags"] or []))
+        tags = set(t.name for t in (place.props["tags"] or []))
+        notes = place.props["notes"] or ""
+
+        if "Permanently Closed" in flags or "Lame" in flags:
+            continue
+
+        for category in get_root_categories(category_graph, place):
+            if category == "Uncategorized":
+                cat_name = "Uncategorized"
+                icon_code = DEFAULT_ICON_CODE
+            else:
+                cat_name = category_graph.nodes[category]["name"]
+                icon_code = category_graph.nodes[category].get("google_style_icon_code", DEFAULT_ICON_CODE)
+
+            if cat_name not in folders:
+                folder = _kml_sub(doc, "Folder")
+                _kml_sub(folder, "name", cat_name)
+                _kml_sub(folder, "visibility", "0" if default_invisible else "1")
+                folders[cat_name] = folder
+
+            color = DEFAULT_COLOR if no_styles or category == "Uncategorized" else _icon_color_for_flags(flags)
+            style_id = f"icon-{icon_code}-{color}-nodesc"
+            description = f"{cat_name}\n{' | '.join(tags)}\n{notes}"
+
+            pm = _kml_sub(folders[cat_name], "Placemark")
+            _kml_sub(pm, "name", place.title)
+            _kml_sub(pm, "description", description)
+            _kml_sub(pm, "styleUrl", f"#{style_id}")
+            point = _kml_sub(pm, "Point")
+            _kml_sub(point, "coordinates", f"{place.props['longitude']},{place.props['latitude']},0")
+
+    return lxml.etree.tostring(root, pretty_print=True, xml_declaration=True, encoding="UTF-8").decode()

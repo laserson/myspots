@@ -121,6 +121,18 @@ For each place, the command:
 
 The `--dry-run` flag reports what would change without prompting or making any actual updates, useful for seeing what's out of sync before committing to changes. The command includes rate limiting (0.1s between API calls) to avoid hitting Google Maps API limits.
 
+### Build & Deploy Site
+
+```bash
+# Build only (writes to docs/)
+myspots build-site
+
+# Build, commit, and push to GitHub Pages in one step
+myspots deploy
+```
+
+`deploy` is cron-friendly: it skips the commit/push if nothing changed.
+
 ### Custom Config Path
 
 All commands support a custom config file location:
@@ -150,7 +162,7 @@ myspots/
 - `googlemaps` - Google Maps API client
 - `ultimate-notion` - Notion API wrapper
 - `textual` - Terminal UI framework
-- `fastkml` - KML file generation
+- `lxml` - KML generation
 - `click` - CLI framework
 - `loguru` - Logging
 - `tqdm` - Progress bars
