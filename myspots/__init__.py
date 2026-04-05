@@ -95,7 +95,10 @@ def get_detailed_place_data(google_maps_client, place_id) -> GooglePlace:
     place_id : str
         Place ID to query.
     """
-    place_api_response = google_maps_client.place(place_id)
+    place_api_response = google_maps_client.place(
+        place_id,
+        fields=["name", "formatted_address", "website", "geometry", "place_id", "business_status"],
+    )
     if place_api_response["status"] != "OK":
         logger.error(f"Failed to pull detailed record on {place_id}")
         return None
