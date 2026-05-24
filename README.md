@@ -79,6 +79,50 @@ You'll need two Notion databases:
 - `parent` (Relation to Categories database, for hierarchical categories)
 - `google_style_icon_code` (Text) - Google Maps icon codes for KML styling
 
+### Adding a New Instance
+
+An "instance" is one city/map. Each instance has its own Places database but
+shares the Categories database, so adding one is mostly a Notion + config step:
+
+1. **Create the Places database in Notion.** The easiest path is to *duplicate*
+   an existing Places database so you inherit the exact schema (see the
+   property list above), then empty it. Make sure its `primary_category`
+   relation points at your **shared** Categories database — not a new one — so
+   the taxonomy stays consistent across cities.
+
+2. **Share it with your integration.** In Notion, open the new database's
+   `•••` menu → *Connections* and add the same integration whose token is in
+   `notion_api_token`. Without this the API can't see the database.
+
+3. **Get the database ID.** It's the 32-character hex string in the database
+   URL: `https://notion.so/<workspace>/<DATABASE_ID>?v=...`.
+
+4. **Add a block to `cred.yaml`** under `instances`. Pick a short lowercase
+   `slug` (it becomes the CLI selector and the site path `/<slug>/`):
+
+   ```yaml
+   instances:
+     nyc:
+       title: "New York"
+       notion_places_database_id: NYC_PLACES_DATABASE_ID
+     paris:                                  # ← new instance
+       title: "Paris"
+       notion_places_database_id: PARIS_PLACES_DATABASE_ID
+   ```
+
+5. **Add places and publish.** The new instance is immediately usable:
+
+   ```bash
+   myspots -i paris add          # search & add places (TUI)
+   myspots -i paris deploy       # build to docs/paris/ and push
+   ```
+
+   `deploy` publishes the map to `/paris/` and regenerates the root landing
+   page so it links to the new instance. The TUI's instance dropdown also picks
+   up the new entry automatically.
+
+No code changes are required to add an instance.
+
 ## Usage
 
 ### Add Places (TUI)
