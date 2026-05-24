@@ -68,7 +68,6 @@ You'll need two Notion databases:
 - `longitude` (Number)
 - `google_place_id` (Text)
 - `google_json_data` (Text)
-- `notion_place` (Place) - Notion's native place field
 - `website` (URL)
 - `notes` (Text)
 - `primary_category` (Relation to Categories database)
