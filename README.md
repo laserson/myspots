@@ -24,15 +24,38 @@ uv tool install --editable .
 
 ## Configuration
 
-Create a configuration file at `~/.config/myspots/cred.yaml`:
+Create a configuration file at `~/.config/myspots/cred.yaml`. Shared
+credentials live at the top level; each city/map is an entry under
+`instances`:
 
 ```yaml
 google_api_key: YOUR_GOOGLE_MAPS_API_KEY
 notion_api_token: YOUR_NOTION_API_TOKEN
-notion_places_database_id: YOUR_NOTION_PLACES_DATABASE_ID
-notion_categories_database_id: YOUR_NOTION_CATEGORIES_DATABASE_ID
 mapbox_access_token: YOUR_MAPBOX_TOKEN
+
+# Categories can be shared across all instances (recommended), so the
+# taxonomy ("Restaurant", "Museum", …) is consistent everywhere.
+notion_categories_database_id: YOUR_NOTION_CATEGORIES_DATABASE_ID
+
+instances:
+  nyc:
+    title: "New York"
+    notion_places_database_id: NYC_PLACES_DATABASE_ID
+  sf:
+    title: "San Francisco"
+    notion_places_database_id: SF_PLACES_DATABASE_ID
+    # Optionally override the shared categories DB for a city-specific taxonomy:
+    # notion_categories_database_id: SF_CATEGORIES_DATABASE_ID
 ```
+
+Each instance needs its own **Places** database. The **Categories** database
+is shared by default (multiple Places DBs can relate to one Categories DB), but
+any instance may override it.
+
+All data commands require `-i/--instance` (there is no default), e.g.
+`myspots -i nyc build-site`. The `add` TUI is the exception — it pre-loads the
+most recently used instance and lets you switch between instances from a
+dropdown.
 
 ### Notion Database Setup
 
@@ -80,20 +103,20 @@ Two-column layout: search and results on the left, annotation (categories, tags,
 - **Ctrl+R** — reset form
 - **Escape** — quit
 
-Categories, tags, and flags are cached locally (`~/.config/myspots/cache.json`, 24h TTL) for instant startup. Location is remembered across sessions. Existing places in Notion are marked with a yellow star.
+Categories, tags, and flags are cached locally per instance (`~/.config/myspots/cache-<instance>.json`, 24h TTL) for instant startup. The most recently used instance is remembered (`state.json`) and pre-loaded; switch instances from the dropdown at the top of the left panel. Location is remembered across sessions. Existing places in Notion are marked with a yellow star.
 
 ### Add a Place (CLI)
 
 Simpler CLI prompt flow (no annotation):
 
 ```bash
-myspots add-place
+myspots -i nyc add-place
 
 # With location context
-myspots add-place --location "Brooklyn, NY"
+myspots -i nyc add-place --location "Brooklyn, NY"
 
 # Non-interactive mode
-myspots add-place --query "Joe's Pizza"
+myspots -i nyc add-place --query "Joe's Pizza"
 ```
 
 ### Refresh Place Data
@@ -101,10 +124,10 @@ myspots add-place --query "Joe's Pizza"
 Keep your Notion database synchronized with Google Maps. This maintenance command iterates through all places in your database (oldest first) and checks for changes:
 
 ```bash
-myspots refresh-store
+myspots -i nyc refresh-store
 
 # Dry run to see what would change without making updates
-myspots refresh-store --dry-run
+myspots -i nyc refresh-store --dry-run
 ```
 
 For each place, the command:
@@ -124,14 +147,18 @@ The `--dry-run` flag reports what would change without prompting or making any a
 ### Build & Deploy Site
 
 ```bash
-# Build only (writes to docs/)
-myspots build-site
+# Build only (writes to docs/<instance>/)
+myspots -i nyc build-site
 
 # Build, commit, and push to GitHub Pages in one step
-myspots deploy
+myspots -i nyc deploy
 ```
 
-`deploy` is cron-friendly: it skips the commit/push if nothing changed.
+Each instance builds to `docs/<instance>/index.html`, served at
+`/<instance>/` on GitHub Pages (e.g. `/nyc/`). The site root (`docs/index.html`)
+is a minimal landing page linking to each instance, regenerated from config on
+every build. `deploy` is cron-friendly: it commits that instance's output plus
+the landing page, and skips the commit/push if nothing changed.
 
 ### Custom Config Path
 

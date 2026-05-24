@@ -2,13 +2,44 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-CACHE_PATH = Path.home() / ".config" / "myspots" / "cache.json"
 CACHE_TTL_HOURS = 24
 MAX_RECENT_LOCATIONS = 20
 
+STATE_PATH = Path.home() / ".config" / "myspots" / "state.json"
+
+
+def cache_path(instance: str) -> Path:
+    """Per-instance cache file so cities don't cross-contaminate."""
+    return Path.home() / ".config" / "myspots" / f"cache-{instance}.json"
+
+
+def get_last_instance() -> str | None:
+    """Return the instance most recently used in the TUI, if any."""
+    if not STATE_PATH.exists():
+        return None
+    try:
+        return json.loads(STATE_PATH.read_text()).get("last_instance")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def set_last_instance(instance: str) -> None:
+    """Remember the instance most recently used in the TUI."""
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    state = {}
+    if STATE_PATH.exists():
+        try:
+            state = json.loads(STATE_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            state = {}
+    state["last_instance"] = instance
+    STATE_PATH.write_text(json.dumps(state, indent=2))
+
 
 class MySpotsCache:
-    def __init__(self):
+    def __init__(self, instance: str):
+        self.instance = instance
+        self.path = cache_path(instance)
         self.categories: list[dict] = []
         self.tags: list[str] = []
         self.flags: list[str] = []
@@ -19,10 +50,10 @@ class MySpotsCache:
 
     def load(self) -> bool:
         """Load cache from disk. Returns True if cache was loaded and is fresh."""
-        if not CACHE_PATH.exists():
+        if not self.path.exists():
             return False
         try:
-            data = json.loads(CACHE_PATH.read_text())
+            data = json.loads(self.path.read_text())
             self.categories = data.get("categories", [])
             self.tags = data.get("tags", [])
             self.flags = data.get("flags", [])
@@ -42,7 +73,7 @@ class MySpotsCache:
         return age.total_seconds() < CACHE_TTL_HOURS * 3600
 
     def save(self):
-        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "categories": self.categories,
             "tags": self.tags,
@@ -52,7 +83,7 @@ class MySpotsCache:
             "known_place_ids": sorted(self.known_place_ids),
             "cached_at": self.cached_at,
         }
-        CACHE_PATH.write_text(json.dumps(data, indent=2))
+        self.path.write_text(json.dumps(data, indent=2))
 
     def refresh(self, store):
         """Refresh cache data from Notion."""

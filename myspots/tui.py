@@ -12,6 +12,7 @@ from textual.widgets import (
     Input,
     Label,
     OptionList,
+    Select,
     Static,
     TextArea,
 )
@@ -22,8 +23,9 @@ from myspots import (
     get_detailed_place_data,
     get_google_maps_client,
     query_places_api,
+    resolve_instance_config,
 )
-from myspots.cache import MySpotsCache
+from myspots.cache import MySpotsCache, set_last_instance
 
 
 class FlagCheckbox(Checkbox):
@@ -52,6 +54,10 @@ Screen {
     width: 1fr;
     border-right: inner $border-color-nofocus;
     padding: 1 2;
+}
+
+#instance-select {
+    margin-bottom: 1;
 }
 
 #right-panel {
@@ -152,12 +158,23 @@ class MySpotsApp(App):
         Binding("escape", "quit", "Quit"),
     ]
 
-    def __init__(self, config: dict, refresh_cache: bool = False):
+    def __init__(
+        self,
+        full_config: dict,
+        instance_options: list[tuple[str, str]],
+        instance: str,
+        refresh_cache: bool = False,
+    ):
         super().__init__()
-        self.config = config
+        self.full_config = full_config
+        # instance_options: list of (label, slug) for the Select widget
+        self.instance_options = instance_options
+        self.instance = instance
+        self.config = resolve_instance_config(full_config, instance)
         self.refresh_cache = refresh_cache
-        self.cache = MySpotsCache()
+        self.cache = MySpotsCache(instance)
         self.cache.load()
+        set_last_instance(instance)
         self.store: NotionMySpotsStore | None = None
         self.google_client = None
         self.search_results: list[dict] = []
@@ -169,6 +186,12 @@ class MySpotsApp(App):
     def compose(self) -> ComposeResult:
         with Horizontal():
             with Vertical(id="left-panel"):
+                yield Select(
+                    self.instance_options,
+                    value=self.instance,
+                    id="instance-select",
+                    allow_blank=False,
+                )
                 yield Label("[bold]Search[/]")
                 yield Input(placeholder="search for a place…", id="search-input")
                 yield Label("Location", classes="field-label")
@@ -211,7 +234,25 @@ class MySpotsApp(App):
         self.query_one("#search-input", Input).focus()
         self._init_cache()
 
-    @work(thread=True)
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "instance-select" and event.value != self.instance:
+            self._switch_instance(event.value)
+
+    def _switch_instance(self, slug: str) -> None:
+        """Switch the active instance: re-resolve config, swap cache, reload."""
+        self.instance = slug
+        self.config = resolve_instance_config(self.full_config, slug)
+        set_last_instance(slug)
+        self.cache = MySpotsCache(slug)
+        self.cache.load()
+        self.store = None
+        self.cache.known_place_ids = set()
+        self._clear_form()
+        self.query_one("#location-input", Input).value = self.cache.last_location
+        self.notify(f"Switched to {slug}")
+        self._init_cache()
+
+    @work(thread=True, exclusive=True)
     def _init_cache(self) -> None:
         self.google_client = get_google_maps_client(self.config)
         self.store = NotionMySpotsStore(self.config)
@@ -227,6 +268,7 @@ class MySpotsApp(App):
 
     def _populate_flags(self) -> None:
         container = self.query_one("#flags-container", Vertical)
+        container.remove_children()
         ordered = [f for f in self._FLAG_ORDER if f in self.cache.flags]
         ordered += [f for f in self.cache.flags if f not in self._FLAG_ORDER and f not in self._FLAG_HIDDEN]
         for flag_name in ordered:

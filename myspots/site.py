@@ -8,7 +8,7 @@ from tqdm import tqdm
 from myspots import NotionMySpotsStore, get_root_categories
 
 
-def build_site_data(store: NotionMySpotsStore, category_graph) -> dict:
+def build_site_data(store: NotionMySpotsStore, category_graph, title: str = "MySpots") -> dict:
     places = []
     root_category_names = set()
     all_tags = set()
@@ -52,6 +52,7 @@ def build_site_data(store: NotionMySpotsStore, category_graph) -> dict:
         initial_bounds = [-74.05, 40.68, -73.90, 40.82]
 
     return {
+        "title": title,
         "places": places,
         "root_categories": sorted(root_category_names),
         "all_tags": sorted(all_tags),
@@ -63,6 +64,7 @@ def build_site_data(store: NotionMySpotsStore, category_graph) -> dict:
 def render_site(data: dict, mapbox_token: str) -> str:
     template = importlib.resources.files("myspots.templates").joinpath("map.html").read_text()
     html = template.replace("__MAPBOX_TOKEN__", mapbox_token)
+    html = html.replace("__TITLE__", data.get("title", "MySpots"))
     html = html.replace("__SPOTS_DATA__", json.dumps(data))
     html = html.replace("__INITIAL_BOUNDS__", json.dumps(data["initial_bounds"]))
     return html
@@ -71,3 +73,28 @@ def render_site(data: dict, mapbox_token: str) -> str:
 def write_site(html: str, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "index.html").write_text(html)
+
+
+def render_landing(slugs: list[str]) -> str:
+    """Render the root landing page: one link per instance slug."""
+    items = "\n".join(
+        f'<li><a href="{slug}/">{slug}</a></li>' for slug in sorted(slugs)
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MySpots</title>
+</head>
+<body>
+<ul>
+{items}
+</ul>
+</body>
+</html>
+"""
+
+
+def write_landing(html: str, docs_dir: Path):
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "index.html").write_text(html)

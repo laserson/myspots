@@ -23,6 +23,31 @@ def get_config(path=None):
     return config
 
 
+def resolve_instance_config(config: dict, instance: str) -> dict:
+    """Merge shared credentials with a named instance's settings.
+
+    The config holds shared credentials (API tokens) at the top level and a
+    per-instance ``instances`` map. Each instance contributes its own
+    ``title`` and Notion database IDs. The returned dict is flat — shared keys
+    overlaid with the instance's keys — plus an ``instance`` slug.
+    """
+    instances = config.get("instances")
+    if not instances:
+        raise ValueError(
+            "No 'instances' section found in config. Add an 'instances:' map "
+            "with one block per city/map (see README)."
+        )
+    if instance not in instances:
+        available = ", ".join(sorted(instances)) or "(none)"
+        raise ValueError(
+            f"Unknown instance '{instance}'. Available instances: {available}"
+        )
+    resolved = {k: v for k, v in config.items() if k != "instances"}
+    resolved.update(instances[instance])
+    resolved["instance"] = instance
+    return resolved
+
+
 ############################################
 # Google Maps API
 ############################################
