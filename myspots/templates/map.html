@@ -585,7 +585,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
         'icon-image': ['get', 'icon'],
         'icon-size': 1.2,
         'icon-allow-overlap': true,
-        'icon-ignore-placement': true
+        'icon-ignore-placement': true,
+        'text-field': ['get', 'name'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-optional': true,
+        'text-padding': 2
+      },
+      paint: {
+        'text-color': '#222',
+        'text-halo-color': 'rgba(255,255,255,0.9)',
+        'text-halo-width': 1.5,
+        'text-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          12, 0,
+          13, 1
+        ]
       }
     });
 
