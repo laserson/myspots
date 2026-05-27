@@ -192,6 +192,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   };
 
   mapboxgl.accessToken = '__MAPBOX_TOKEN__';
+  // Shape right-to-left scripts (Hebrew, Arabic) in on-canvas labels. Lazy:
+  // only fetched when RTL text is actually present, so LTR maps pay nothing.
+  mapboxgl.setRTLTextPlugin(
+    'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js',
+    null,
+    true
+  );
   var map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
@@ -199,6 +206,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     zoom: 2
   });
   map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  map.addControl(new mapboxgl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+    showUserHeading: true
+  }), 'top-right');
 
   var activeFlags = new Set();
   var activeCategories = new Set();
