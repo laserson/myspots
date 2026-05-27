@@ -220,10 +220,18 @@ def _install_notion_rate_limit_retry(client, max_attempts: int = 6, max_delay: f
 class NotionMySpotsStore:
     def __init__(self, config: dict):
         from notion_client import Client
-        # Create notion client directly with token, then pass to Session
-        notion_client = Client(auth=config["notion_api_token"])
-        _install_notion_rate_limit_retry(notion_client)
-        self.notion = uno.Session(client=notion_client)
+
+        # ultimate-notion's Session is a process-wide singleton that refuses a
+        # second concurrent instance. Reuse the active one if present (e.g. when
+        # deploying several instances in one run, or switching instances in the
+        # TUI) — all instances share the same Notion token, so the connection is
+        # interchangeable; only the database IDs differ.
+        if uno.Session._active_session is not None:
+            self.notion = uno.Session._active_session
+        else:
+            notion_client = Client(auth=config["notion_api_token"])
+            _install_notion_rate_limit_retry(notion_client)
+            self.notion = uno.Session(client=notion_client)
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]
 

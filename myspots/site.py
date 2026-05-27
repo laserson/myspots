@@ -76,20 +76,23 @@ def write_site(html: str, output_dir: Path):
 
 
 def render_landing(slugs: list[str]) -> str:
-    """Render the root landing page: one link per instance slug."""
-    items = "\n".join(
-        f'<li><a href="{slug}/">{slug}</a></li>' for slug in sorted(slugs)
-    )
+    """Render the root landing page: one link per instance, in config order."""
+    links = "\n".join(f'<a href="{slug}/">{slug}</a>' for slug in slugs)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MySpots</title>
+<style>
+  body {{ font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+         "Liberation Mono", monospace;
+         margin: 2rem; line-height: 2; }}
+  a {{ display: block; font-size: 1.75rem; }}
+</style>
 </head>
 <body>
-<ul>
-{items}
-</ul>
+{links}
 </body>
 </html>
 """
