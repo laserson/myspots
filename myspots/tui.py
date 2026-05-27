@@ -17,6 +17,7 @@ from textual.widgets import (
     TextArea,
 )
 from textual.widgets.option_list import Option
+from bidi.algorithm import get_display
 
 from myspots import (
     NotionMySpotsStore,
@@ -40,6 +41,16 @@ class FlagCheckbox(Checkbox):
 
 def _flag_id(name: str) -> str:
     return f"flag-{name.lower().replace(' ', '-')}"
+
+
+def _bidi(text: str) -> str:
+    """Reorder logical-order text (e.g. Hebrew) for correct terminal display.
+
+    The terminal prints characters left-to-right in storage order, so RTL
+    scripts look reversed; get_display() returns the visual ordering. LTR text
+    (English, etc.) is returned unchanged.
+    """
+    return get_display(text) if text else text
 
 
 CSS = """
@@ -358,8 +369,8 @@ class MySpotsApp(App):
         self.app.call_from_thread(update_results)
 
     def _format_result(self, index: int, result: dict) -> str:
-        name = result.get("name", "Unknown")
-        addr = result.get("formatted_address", "")
+        name = _bidi(result.get("name", "Unknown"))
+        addr = _bidi(result.get("formatted_address", ""))
         pid = result.get("place_id", "")
         selected = "[bold green]◆[/] " if index in self.selected_indices else "  "
         exists = "[bold yellow]★[/] " if pid in self.cache.known_place_ids else "  "
@@ -389,8 +400,8 @@ class MySpotsApp(App):
         lines = []
         for i in sorted(self.selected_indices):
             r = self.search_results[i]
-            name = r.get("name", "Unknown")
-            addr = r.get("formatted_address", "")
+            name = _bidi(r.get("name", "Unknown"))
+            addr = _bidi(r.get("formatted_address", ""))
             pid = r.get("place_id", "")
             exists = " [bold yellow]★ in Notion[/]" if pid in self.cache.known_place_ids else ""
             lines.append(f"[bold green]◆[/] [bold]{name}[/]{exists}\n  [dim italic]{addr}[/]")

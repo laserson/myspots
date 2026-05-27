@@ -4,7 +4,7 @@ import sys
 from time import sleep
 
 import ultimate_notion as uno
-from click import Path, UsageError, group, option, pass_context, prompt
+from click import Path, UsageError, argument, group, option, pass_context, prompt
 from googlemaps.exceptions import ApiError
 from loguru import logger
 
@@ -144,6 +144,112 @@ def add_place(ctx, query, location):
         logger.info("Added {}", result["place_id"])
 
 
+@cli.command(name="import-kml")
+@argument("kml_file", type=Path(exists=True, dir_okay=False))
+@option("--dry-run", is_flag=True, help="Preview matches without writing to Notion")
+@option(
+    "--max-distance",
+    default=250.0,
+    type=float,
+    help="Max meters between the KML pin and its matched Google place (default 250)",
+)
+@pass_context
+def import_kml(ctx, kml_file, dry_run, max_distance):
+    """Seed an instance from a Google My Maps KML export.
+
+    Each placemark is re-resolved against the Google Places API (search by
+    name, biased to the KML coordinates, picking the closest match within
+    --max-distance). Imported places are tagged 'imported' plus
+    'imported-<folder>' for the layer they came from. When the matched Google
+    name differs from the KML name (same-script only), the place is marked
+    '[OK?]' and tagged 'imported-review' so you can eyeball it in Notion. Run
+    with --dry-run first to review matches before writing.
+    """
+    from myspots.kml_import import haversine_m, name_mismatch, parse_kml
+
+    config, instance = _resolved(ctx)
+    client = get_google_maps_client(config)
+    store = NotionMySpotsStore(config)
+    known_place_ids = store.fetch_known_place_ids()
+
+    placemarks = parse_kml(kml_file)
+    logger.info("Parsed {} placemarks from {}", len(placemarks), kml_file)
+
+    added = skipped_dup = flagged = 0
+    for pm in placemarks:
+        results = query_places_api(client, query=pm.name, location=(pm.latitude, pm.longitude))
+        if not results:
+            print(f"[FLAG] {pm.name}: no Google results")
+            flagged += 1
+            continue
+
+        # Pick the result whose geometry is closest to the KML pin.
+        def _dist(r):
+            loc = r["geometry"]["location"]
+            return haversine_m(pm.latitude, pm.longitude, loc["lat"], loc["lng"])
+
+        best = min(results, key=_dist)
+        dist = _dist(best)
+        if dist > max_distance:
+            print(
+                f"[FLAG] {pm.name}: nearest match '{best['name']}' is {dist:.0f}m away "
+                f"(> {max_distance:.0f}m); skipping"
+            )
+            flagged += 1
+            continue
+
+        place_id = best["place_id"]
+        if place_id in known_place_ids:
+            print(f"[DUP]  {pm.name} → {best['name']} (already in instance)")
+            skipped_dup += 1
+            continue
+
+        tags = ["imported"]
+        if pm.folder:
+            tags.append(f"imported-{pm.folder}")
+
+        # The page title becomes the matched Google name, so a same-script name
+        # mismatch (e.g. Onza→Akbar) means the proximity pick is probably wrong.
+        # Tag it 'imported-review' so it's filterable in Notion afterwards.
+        mismatch = name_mismatch(pm.name, best["name"])
+        if mismatch:
+            tags.append("imported-review")
+
+        # Preserve the original KML name (so you can spot mismatches) and the
+        # original KML description in the notes field.
+        note_lines = [f'Imported from KML as: "{pm.name}"']
+        if pm.description:
+            note_lines.append(pm.description)
+        notes = "\n".join(note_lines)
+
+        print(
+            f"{'[OK?]' if mismatch else '[OK] '}  {pm.name} → {best['name']}  ({dist:.0f}m)  "
+            f"{best.get('formatted_address', '')}  tags={tags}"
+        )
+
+        if not dry_run:
+            place = get_detailed_place_data(client, place_id)
+            if place is None:
+                print(f"[FLAG] {pm.name}: failed to fetch details for {place_id}")
+                flagged += 1
+                continue
+            store.insert_spot(place, notes=notes, tags=tags)
+            known_place_ids.add(place_id)
+            added += 1
+        sleep(0.1)  # be gentle with the Places API
+
+    verb = "Would add" if dry_run else "Added"
+    logger.info(
+        "{} {} place(s); {} duplicate(s) skipped; {} flagged for review.",
+        verb,
+        len(placemarks) - skipped_dup - flagged if dry_run else added,
+        skipped_dup,
+        flagged,
+    )
+    if dry_run:
+        logger.info("Dry run — nothing written. Re-run without --dry-run to import.")
+
+
 @cli.command(name="write-kml")
 @option("--no-styles", is_flag=True, help="Use default pin style for all places")
 @option("--default-invisible", is_flag=True, help="Set folder visibility to off by default")
@@ -205,14 +311,31 @@ def build_site(ctx, output_dir, mapbox_token):
 @option("--mapbox-token", default=None, help="Mapbox access token")
 @pass_context
 def deploy(ctx, mapbox_token):
-    """Build the site, commit, and push to GitHub Pages. No-ops if nothing changed."""
+    """Build, commit, and push to GitHub Pages. No-ops if nothing changed.
+
+    With -i/--instance, deploys just that instance; without it, deploys every
+    configured instance.
+    """
     import subprocess
 
-    config, instance = _resolved(ctx)
-    out = _build(config, instance, mapbox_token=mapbox_token)
-    landing = _write_landing(ctx)
+    full_config = ctx.obj["full_config"]
+    all_instances = list((full_config.get("instances") or {}).keys())
+    if not all_instances:
+        sys.exit("No 'instances' configured. Add an 'instances:' map to your config.")
+
+    selected = ctx.obj["instance"]
+    if selected and selected not in all_instances:
+        available = ", ".join(sorted(all_instances))
+        raise UsageError(f"Unknown instance '{selected}'. Available: {available}")
+    targets = [selected] if selected else all_instances
+
     repo_root = _repo_root()
-    paths = [str(out), str(landing)]
+    built = [
+        _build(resolve_instance_config(full_config, inst), inst, mapbox_token=mapbox_token)
+        for inst in targets
+    ]
+    landing = _write_landing(ctx)
+    paths = [str(p) for p in built] + [str(landing)]
 
     # --porcelain catches untracked files too (a fresh instance dir or a
     # regenerated landing page), which `git diff --quiet` would miss.
@@ -224,13 +347,15 @@ def deploy(ctx, mapbox_token):
         logger.info("No changes to deploy")
         return
 
-    subprocess.run(["git", "add", *paths], cwd=repo_root, check=True)
-    subprocess.run(
-        ["git", "commit", "-m", f"Rebuild {instance} site"],
-        cwd=repo_root, check=True,
+    message = (
+        f"Rebuild {targets[0]} site"
+        if len(targets) == 1
+        else f"Rebuild sites: {', '.join(targets)}"
     )
+    subprocess.run(["git", "add", *paths], cwd=repo_root, check=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=repo_root, check=True)
     subprocess.run(["git", "push"], cwd=repo_root, check=True)
-    logger.info("Deployed")
+    logger.info("Deployed: {}", ", ".join(targets))
 
 
 @cli.command(name="refresh-store")

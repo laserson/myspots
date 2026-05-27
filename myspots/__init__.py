@@ -1,3 +1,4 @@
+import functools
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,34 +71,61 @@ def get_google_maps_client(config) -> Client:
     return Client(config["google_api_key"])
 
 
-def location_to_latlng(google_maps_client, location: str):
+# Google Places text-search caps the location-bias radius at 50 km.
+PLACES_RADIUS_MAX_M = 50000
+
+
+def geocode_location(google_maps_client, location: str):
+    """Geocode a free-text location to its geometry (center + viewport).
+
+    Returns the Geocoding API ``geometry`` dict (with ``location`` and
+    ``viewport``), or None if the location can't be geocoded.
+    """
     geocode_api_response = google_maps_client.geocode(location)
     if len(geocode_api_response) == 0:
         logger.warning("No results for location geocode: {}", location)
         return None
-    addr = geocode_api_response[0]["formatted_address"]
-    logger.debug("Found location: {}", addr)
-    return geocode_api_response[0]["geometry"]["location"]
+    logger.debug("Found location: {}", geocode_api_response[0]["formatted_address"])
+    return geocode_api_response[0]["geometry"]
+
+
+def _viewport_radius_m(geometry: dict) -> float | None:
+    """Approximate radius (m) from a geocode geometry's viewport corner."""
+    viewport = geometry.get("viewport")
+    if not viewport:
+        return None
+    from math import asin, cos, radians, sin, sqrt
+
+    center, ne = geometry["location"], viewport["northeast"]
+    dlat = radians(ne["lat"] - center["lat"])
+    dlng = radians(ne["lng"] - center["lng"])
+    a = (
+        sin(dlat / 2) ** 2
+        + cos(radians(center["lat"])) * cos(radians(ne["lat"])) * sin(dlng / 2) ** 2
+    )
+    return 2 * 6371000.0 * asin(sqrt(a))
 
 
 def query_places_api(google_maps_client: Client, query, location=None):
     """Query the Google Places API to get list of results.
 
-    Parameters
-    ----------
-    google_maps_client : googlemaps.Client
-        Client object for the Google Maps API.
-    query : str
-        Search query to use.
-    location : str, optional
-        Location to append to query for geographic context, by default None
-
-    Returns
-    -------
-    list
-        List of results from the Google Places API.
+    ``location`` may be a free-text string (e.g. "Tel Aviv"), which is geocoded
+    and used as a location bias with a radius sized to the geocoded area (capped
+    at the Places 50 km limit), or a (lat, lng) pair used directly as a bias
+    (e.g. from the KML importer). Note a country-sized area exceeds the 50 km
+    cap, so scope to a city for an effective bias.
     """
-    places_api_response = google_maps_client.places(query, location=location)
+    params = {}
+    if isinstance(location, str) and location.strip():
+        geometry = geocode_location(google_maps_client, location)
+        if geometry:
+            params["location"] = geometry["location"]
+            radius = _viewport_radius_m(geometry)
+            params["radius"] = int(min(radius, PLACES_RADIUS_MAX_M)) if radius else PLACES_RADIUS_MAX_M
+    elif location is not None:
+        params["location"] = location
+
+    places_api_response = google_maps_client.places(query, **params)
     if places_api_response["status"] != "OK":
         logger.error(
             "Failed to query places API for {}\n{}", query, places_api_response
@@ -144,11 +172,57 @@ def get_detailed_place_data(google_maps_client, place_id) -> GooglePlace:
 ############################################
 
 
+def _install_notion_rate_limit_retry(client, max_attempts: int = 6, max_delay: float = 30.0):
+    """Make a notion_client retry on HTTP 429 with backoff (via tenacity).
+
+    Notion caps API traffic (~3 req/s); when exceeded it returns a
+    ``rate_limited`` error with a ``Retry-After`` header. Patching the
+    client's low-level ``request`` makes every call resilient — including the
+    per-page requests inside paginated queries and individual page inserts —
+    without each caller needing its own retry loop.
+    """
+    from notion_client.errors import APIResponseError
+    from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+    original_request = client.request
+    exponential = wait_exponential(multiplier=1, max=max_delay)
+
+    def _is_rate_limited(exc) -> bool:
+        return isinstance(exc, APIResponseError) and getattr(exc, "code", None) == "rate_limited"
+
+    def _wait(retry_state) -> float:
+        # Honor Notion's Retry-After header when present, else back off.
+        exc = retry_state.outcome.exception()
+        headers = getattr(exc, "headers", None)
+        retry_after = headers.get("Retry-After") if headers is not None else None
+        return float(retry_after) if retry_after else exponential(retry_state)
+
+    def _log(retry_state) -> None:
+        logger.warning(
+            "Notion rate limited; retrying in {:.0f}s (attempt {}/{})",
+            retry_state.next_action.sleep, retry_state.attempt_number, max_attempts,
+        )
+
+    @retry(
+        retry=retry_if_exception(_is_rate_limited),
+        wait=_wait,
+        stop=stop_after_attempt(max_attempts),
+        before_sleep=_log,
+        reraise=True,
+    )
+    @functools.wraps(original_request)
+    def request_with_retry(*args, **kwargs):
+        return original_request(*args, **kwargs)
+
+    client.request = request_with_retry
+
+
 class NotionMySpotsStore:
     def __init__(self, config: dict):
         from notion_client import Client
         # Create notion client directly with token, then pass to Session
         notion_client = Client(auth=config["notion_api_token"])
+        _install_notion_rate_limit_retry(notion_client)
         self.notion = uno.Session(client=notion_client)
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]

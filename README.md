@@ -4,7 +4,7 @@ A Python CLI tool for managing your favorite places using Google Maps and Notion
 
 ## Overview
 
-`myspots` helps you discover, organize, and export places of interest. Search for places using the Google Maps API, store them in a Notion database with custom categories and flags, and export them to KML format for use in Google Earth or Google My Maps.
+`myspots` helps you discover, organize, and publish places of interest. Search for places using the Google Maps API, store them in a Notion database with custom categories and flags, and publish them as interactive web maps (Mapbox GL) on GitHub Pages. You can run multiple **instances** — one per city/map — from a single install, import an existing Google My Maps KML export to seed a new instance, and export back to KML for Google Earth or Google My Maps.
 
 ## Installation
 
@@ -21,6 +21,10 @@ uv sync
 # Install the CLI tool globally (editable so source changes are reflected immediately)
 uv tool install --editable .
 ```
+
+The editable install reflects source-code edits live, but **not** dependency
+changes — after pulling changes that add or bump a dependency, refresh the
+tool's environment with `uv tool upgrade myspots`.
 
 ## Configuration
 
@@ -146,7 +150,7 @@ Two-column layout: search and results on the left, annotation (categories, tags,
 - **Ctrl+R** — reset form
 - **Escape** — quit
 
-Categories, tags, and flags are cached locally per instance (`~/.config/myspots/cache-<instance>.json`, 24h TTL) for instant startup. The most recently used instance is remembered (`state.json`) and pre-loaded; switch instances from the dropdown at the top of the left panel. Location is remembered across sessions. Existing places in Notion are marked with a yellow star.
+Categories, tags, and flags are cached locally per instance (`~/.config/myspots/cache-<instance>.json`, 24h TTL) for instant startup. The most recently used instance is remembered (`state.json`) and pre-loaded; switch instances from the dropdown at the top of the left panel. Location is remembered across sessions. Existing places in Notion are marked with a yellow star — if you delete a place in Notion, run `myspots -i <instance> add --refresh-cache` so the local cache forgets it. Right-to-left names (e.g. Hebrew) are reordered for correct display in the results list and header.
 
 ### Add a Place (CLI)
 
@@ -161,6 +165,36 @@ myspots -i nyc add-place --location "Brooklyn, NY"
 # Non-interactive mode
 myspots -i nyc add-place --query "Joe's Pizza"
 ```
+
+### Import from a Google My Maps KML
+
+Seed an instance from a Google My Maps export. My Maps placemarks carry only a
+name, a point, and an optional description, so each is re-resolved against the
+Google Places API — searched by name, biased to the KML coordinates, and
+matched to the closest result within `--max-distance` (250m by default) — to
+recover the address, `google_place_id`, and website.
+
+```bash
+# Always preview first: prints one line per placemark, writes nothing
+myspots -i tlv import-kml ~/Downloads/MyMap.kml --dry-run
+
+# Import for real
+myspots -i tlv import-kml ~/Downloads/MyMap.kml
+
+# Widen the match radius if pins are placed loosely
+myspots -i tlv import-kml ~/Downloads/MyMap.kml --max-distance 500
+```
+
+Each imported place is tagged `imported` plus `imported-<folder>` for the My
+Maps layer it came from, so you can find or bulk-remove the batch later. The KML
+name and description are stored in the notes field (`Imported from KML as: "…"`).
+Because the match is filtered by *location*, a nearby place with a different
+name can be picked; when the matched Google name differs from the KML name
+(same-script only), the place is marked `[OK?]` in the preview and tagged
+`imported-review` so you can eyeball it in Notion. Placemarks with no result, or
+whose nearest match is beyond `--max-distance`, are flagged and skipped — add
+those by hand. Re-running is safe: existing places are de-duplicated by
+`google_place_id`.
 
 ### Refresh Place Data
 
@@ -185,7 +219,7 @@ For each place, the command:
 
 3. **Handles errors gracefully** - If a place ID is not found on Google Maps, logs a warning and continues
 
-The `--dry-run` flag reports what would change without prompting or making any actual updates, useful for seeing what's out of sync before committing to changes. The command includes rate limiting (0.1s between API calls) to avoid hitting Google Maps API limits.
+The `--dry-run` flag reports what would change without prompting or making any actual updates, useful for seeing what's out of sync before committing to changes. The command includes rate limiting (0.1s between API calls) to avoid hitting Google Maps API limits. Notion API calls — here and in every command — automatically retry with exponential backoff (honoring `Retry-After`) when Notion returns a rate-limit error (HTTP 429).
 
 ### Build & Deploy Site
 
@@ -193,22 +227,31 @@ The `--dry-run` flag reports what would change without prompting or making any a
 # Build only (writes to docs/<instance>/)
 myspots -i nyc build-site
 
-# Build, commit, and push to GitHub Pages in one step
+# Deploy one instance: build, commit, and push to GitHub Pages
 myspots -i nyc deploy
+
+# Deploy ALL instances (omit -i): rebuilds every city in one commit
+myspots deploy
 ```
 
 Each instance builds to `docs/<instance>/index.html`, served at
 `/<instance>/` on GitHub Pages (e.g. `/nyc/`). The site root (`docs/index.html`)
 is a minimal landing page linking to each instance, regenerated from config on
-every build. `deploy` is cron-friendly: it commits that instance's output plus
-the landing page, and skips the commit/push if nothing changed.
+every build. `deploy` is cron-friendly: with `-i` it deploys that one instance,
+without `-i` it deploys all of them, and either way it skips the commit/push if
+nothing changed — so a single `myspots deploy` cron keeps every map current.
+
+The published map has a geolocation button (drops a tracking dot at your current
+location on click) and renders right-to-left labels (Hebrew, Arabic) correctly
+via Mapbox's RTL text plugin.
 
 ### Custom Config Path
 
-All commands support a custom config file location:
+All commands support a custom config file location (note `--config` and
+`--instance` are global options, so they come before the subcommand):
 
 ```bash
-myspots --config /path/to/config.yaml add-place
+myspots --config /path/to/config.yaml -i nyc add-place
 ```
 
 ## Development
@@ -218,12 +261,17 @@ myspots --config /path/to/config.yaml add-place
 ```
 myspots/
 ├── myspots/
-│   ├── __init__.py      # Core functions and data models
-│   ├── cache.py         # Local JSON cache for categories, tags, flags
-│   ├── cli.py           # CLI commands
-│   └── tui.py           # Textual TUI for `myspots add`
-├── scripts/             # Utility scripts
-├── pyproject.toml       # Project metadata and dependencies
+│   ├── __init__.py        # Core functions, data models, Notion store (with 429 retry)
+│   ├── cache.py           # Per-instance JSON cache + last-used instance state
+│   ├── cli.py             # CLI commands
+│   ├── kml_import.py      # KML parsing + name/geo matching helpers
+│   ├── site.py            # Static site + landing page builder
+│   ├── tui.py             # Textual TUI for `myspots add`
+│   └── templates/
+│       └── map.html       # Mapbox GL map template
+├── scripts/               # Utility scripts
+├── docs/                  # Built site, one folder per instance (GitHub Pages)
+├── pyproject.toml         # Project metadata and dependencies
 └── README.md
 ```
 
@@ -232,8 +280,10 @@ myspots/
 - `googlemaps` - Google Maps API client
 - `ultimate-notion` - Notion API wrapper
 - `textual` - Terminal UI framework
-- `lxml` - KML generation
+- `lxml` - KML generation and parsing
 - `click` - CLI framework
+- `tenacity` - Retry/backoff for Notion rate limits
+- `python-bidi` - Right-to-left text display in the TUI
 - `loguru` - Logging
 - `tqdm` - Progress bars
 
