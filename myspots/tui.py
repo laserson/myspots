@@ -193,6 +193,7 @@ class MySpotsApp(App):
         self.selected_categories: list[dict] = []  # [{id, name}, ...]
         self.selected_tags: list[str] = []
         self._submitting: bool = False
+        self._rendered_flags: list[str] | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -243,6 +244,9 @@ class MySpotsApp(App):
         self.query_one("#tag-suggestions", OptionList).can_focus = False
         self.query_one("#right-panel", VerticalScroll).can_focus = False
         self.query_one("#search-input", Input).focus()
+        # Render checkboxes from the on-disk cache right away; _init_cache()
+        # will only rebuild them if a Notion refresh changes the flag list.
+        self._populate_flags()
         self._init_cache()
 
     def on_select_changed(self, event: Select.Changed) -> None:
@@ -278,15 +282,16 @@ class MySpotsApp(App):
     _FLAG_HIDDEN = {"Reviewed"}
 
     def _populate_flags(self) -> None:
-        container = self.query_one("#flags-container", Vertical)
-        container.remove_children()
         ordered = [f for f in self._FLAG_ORDER if f in self.cache.flags]
         ordered += [f for f in self.cache.flags if f not in self._FLAG_ORDER and f not in self._FLAG_HIDDEN]
+        if ordered == self._rendered_flags:
+            return
+        container = self.query_one("#flags-container", Vertical)
+        container.remove_children()
         for flag_name in ordered:
-            if flag_name in self._FLAG_HIDDEN:
-                continue
             cb = FlagCheckbox(flag_name, id=_flag_id(flag_name))
             container.mount(cb)
+        self._rendered_flags = ordered
 
     _INPUT_TO_SUGGESTIONS = {
         "category-input": "category-suggestions",
