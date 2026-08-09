@@ -15,7 +15,9 @@ dependencies = [
     "tenacity>=9.1.4",
     "textual>=1.0.0",
     "tqdm>=4.67.1",
-    "ultimate-notion>=0.0.10",
+    # <0.10 pin: 0.10 migrated to Notion "data sources" and dropped
+    # Database.create_page, which NotionMySpotsStore relies on.
+    "ultimate-notion>=0.9.6,<0.10",
 ]
 authors = [
     { name = "Uri Laserson", email = "uri.laserson@gmail.com" }
