@@ -331,7 +331,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "textual", specifier = ">=1.0.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "ultimate-notion", specifier = ">=0.9.6,<0.10" },
+    { name = "ultimate-notion", specifier = ">=0.10.1,<0.11" },
 ]
 
 [[package]]
@@ -345,14 +345,14 @@ wheels = [
 
 [[package]]
 name = "notion-client"
-version = "2.5.0"
+version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/8c/b2f11904e1ef7a33338d3890fc50d30ffa2d0fca51b01b0a827d909b615a/notion_client-2.5.0.tar.gz", hash = "sha256:a03a0cc0502292193527af07a3bd13e40eb2b1083b60dcc7d733baad2d2729fd", size = 20865, upload-time = "2025-08-26T10:40:05.041Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/e3/4ac01384e86e2c381c21b87a0fefcdfe6d65577ae3153fad27e7e96c5d9c/notion_client-3.1.0.tar.gz", hash = "sha256:516e31326f855ec34559289b57be4e27ad656062f51f594c8f4ee3a608ee333d", size = 38781, upload-time = "2026-05-12T08:54:44.363Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/52/6b2a3081e1cb1123b1b28d5b1ebe88cb9e19b72264552dc707c1b265a1a7/notion_client-2.5.0-py2.py3-none-any.whl", hash = "sha256:d2efde1def1e7a3cc68cf4d2cab715571c71767852b26bf04474e9945d4a5903", size = 14348, upload-time = "2025-08-26T10:40:03.806Z" },
+    { url = "https://files.pythonhosted.org/packages/08/08/12645b24044301cb0d7908ec068c55c0d5724f39372891a1a27d630fdf50/notion_client-3.1.0-py2.py3-none-any.whl", hash = "sha256:7e3935f4dbc11231d8ad1fe404112e278501520342eaa35f86456f0df44a8aca", size = 23092, upload-time = "2026-05-12T08:54:43.135Z" },
 ]
 
 [[package]]
@@ -839,7 +839,7 @@ wheels = [
 
 [[package]]
 name = "ultimate-notion"
-version = "0.9.6"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "emoji" },
@@ -857,9 +857,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "url-normalize" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/85/e06406d23ccc85197cbe4473d7aa0f6b38b700c4af02070f630fcf1b34c6/ultimate_notion-0.9.6.tar.gz", hash = "sha256:79841a72e53ebda53fb757ae23b63aa69df773b3bbbfda8d4aeb11fdd4343e8e", size = 121496, upload-time = "2025-11-23T19:00:29.614Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/1d/216f40465beccf227bab481dc48c92619aacad0fb648301ffb662e732eb1/ultimate_notion-0.10.1.tar.gz", hash = "sha256:80e1a4bceca76cf287f48514c79352e1f672701fc77b4a830acf48eb05d616bc", size = 133136, upload-time = "2026-06-28T18:51:54.971Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/34/af693349d3ddf5829849b7358cb17c860c4880441ec04ec2a74eb8679b12/ultimate_notion-0.9.6-py3-none-any.whl", hash = "sha256:41b09141b1bd20c60f1a210bbe101563d4d9d694376fc6fa84770b129fef7b8e", size = 139697, upload-time = "2025-11-23T19:00:28.408Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/c3/be2da018eb6945032a5bb01ce192bf212dd7327f2ed1464ef6556543dc2f/ultimate_notion-0.10.1-py3-none-any.whl", hash = "sha256:9a5d4ed323f03ba53e20978754481f5d3527d0b09b372688910a1c2351ed8a94", size = 151722, upload-time = "2026-06-28T18:51:53.31Z" },
 ]
 
 [[package]]

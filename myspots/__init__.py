@@ -235,8 +235,18 @@ class NotionMySpotsStore:
         self.notion_categories_database_id = config["notion_categories_database_id"]
         self.notion_places_database_id = config["notion_places_database_id"]
 
+    def _data_source(self, database_id: str):
+        """Return the sole data source of a database.
+
+        Notion 0.10 split a database into one-or-more "data sources"; page
+        creation, schema, and queries all live on the data source now, not the
+        database. Our databases each have exactly one data source, so .item()
+        unwraps it (raising if that assumption ever stops holding).
+        """
+        return self.notion.get_db(database_id).data_sources.item()
+
     def insert_spot(self, place: GooglePlace, notes=None, category_ids=None, tags=None, flags=None):
-        places_db = self.notion.get_db(self.notion_places_database_id)
+        places_ds = self._data_source(self.notion_places_database_id)
         kwargs = {
             "name": place.name,
             "address": place.address,
@@ -249,7 +259,7 @@ class NotionMySpotsStore:
             kwargs["website"] = place.website
         if notes:
             kwargs["notes"] = notes
-        page = places_db.create_page(**kwargs)
+        page = places_ds.create_page(**kwargs)
 
         # Set category relations (two-step: create page, then set props)
         if category_ids:
@@ -264,21 +274,21 @@ class NotionMySpotsStore:
 
     def fetch_tag_options(self) -> list[str]:
         """Get available tag names from places DB schema."""
-        places_db = self.notion.get_db(self.notion_places_database_id)
-        tags_prop = places_db.schema.get_prop("tags")
+        places_ds = self._data_source(self.notion_places_database_id)
+        tags_prop = places_ds.schema.get_prop("tags")
         return [opt.name for opt in tags_prop.options]
 
     def fetch_flag_options(self) -> list[str]:
         """Get available flag names from places DB schema."""
-        places_db = self.notion.get_db(self.notion_places_database_id)
-        flags_prop = places_db.schema.get_prop("flags")
+        places_ds = self._data_source(self.notion_places_database_id)
+        flags_prop = places_ds.schema.get_prop("flags")
         return [opt.name for opt in flags_prop.options]
 
     def fetch_categories(self) -> list[dict]:
         """Get all categories with id, name, parent_id."""
-        categories_db = self.notion.get_db(self.notion_categories_database_id)
+        categories_ds = self._data_source(self.notion_categories_database_id)
         result = []
-        for category in categories_db.query.execute():
+        for category in categories_ds.query.execute():
             parent = category.props["parent"]
             parent_id = parent[0].id if parent else None
             result.append({
@@ -298,16 +308,16 @@ class NotionMySpotsStore:
         return result
 
     def spot_exists(self, place_id: GooglePlaceID):
-        places_db = self.notion.get_db(self.notion_places_database_id)
-        pages = places_db.query.filter(
+        places_ds = self._data_source(self.notion_places_database_id)
+        pages = places_ds.query.filter(
             uno.prop("google_place_id") == place_id
         ).execute()
         return len(list(pages)) > 0
 
     def category_graph(self) -> DiGraph:
-        categories_db = self.notion.get_db(self.notion_categories_database_id)
+        categories_ds = self._data_source(self.notion_categories_database_id)
         graph = DiGraph()
-        for category in categories_db.query.execute():
+        for category in categories_ds.query.execute():
             graph.add_node(
                 category.id,
                 name=category.props["category"],
@@ -319,8 +329,8 @@ class NotionMySpotsStore:
         return graph
 
     def iter_places(self, sort_oldest_first=False):
-        places_db = self.notion.get_db(self.notion_places_database_id)
-        query = places_db.query
+        places_ds = self._data_source(self.notion_places_database_id)
+        query = places_ds.query
         if sort_oldest_first:
             query = query.sort(uno.prop("last_modified").asc())
         for place in query.execute():

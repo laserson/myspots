@@ -367,9 +367,6 @@ def refresh_store(ctx, dry_run):
     google_maps_client = get_google_maps_client(config)
     store = NotionMySpotsStore(config)
 
-    # get the database to access schema information
-    places_db = store.notion.get_db(store.notion_places_database_id)
-
     for place in store.iter_places(sort_oldest_first=True):
         sleep(0.1)
         logger.debug("Processing {}", place.title)
