@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copenhagen</title>
+<meta name="description" content="A personal map of saved places, built with Mapbox GL JS.">
+<meta name="google-site-verification" content="5LvnRZQV4QE9wpIOIzkQWUTPO1B8pbYHzPgmLt76N2M" />
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+#controls {
+  position: absolute; top: 8px; left: 8px; right: 50px; z-index: 1;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.8); backdrop-filter: blur(6px);
+  border-radius: 8px; padding: 6px 10px;
+  border: 1px solid rgba(0,0,0,0.1);
+  font-size: 12px;
+}
+.filter-section { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.filter-section.tags-section { flex-shrink: 1; min-width: 0; }
+.section-label {
+  font-size: 10px; color: #999; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-right: 2px; white-space: nowrap;
+}
+.chip {
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: rgba(240,240,240,0.9); color: #555;
+  border: 1px solid #ddd;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.chip:hover { background: rgba(230,230,230,1); }
+.chip.active { background: #333; color: #fff; border-color: #333; }
+.chip.active:hover { background: #555; border-color: #555; }
+
+/* "More" categories dropdown */
+.more-wrap { position: relative; }
+.more-chip {
+  padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: rgba(240,240,240,0.9); color: #555;
+  border: 1px solid #ddd;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.more-chip:hover { background: rgba(230,230,230,1); }
+.more-chip.has-active { border-color: #333; color: #333; font-weight: 600; }
+.more-dropdown {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0;
+  background: #fff; border: 1px solid #ddd; border-radius: 6px;
+  padding: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 20;
+  min-width: 120px;
+}
+.more-dropdown.open { display: flex; flex-direction: column; gap: 2px; }
+.more-dropdown .chip { display: block; text-align: left; }
+
+/* Tag chips & input */
+.tag-chip {
+  padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;
+  background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.tag-chip .remove {
+  cursor: pointer; font-size: 14px; line-height: 1; color: #1565c0; opacity: 0.6;
+}
+.tag-chip .remove:hover { opacity: 1; }
+.tag-input-wrap { position: relative; flex-shrink: 1; min-width: 70px; }
+.tag-input {
+  width: 100%; padding: 3px 8px; border-radius: 12px; border: 1px solid #ddd;
+  font-size: 12px; outline: none; background: rgba(255,255,255,0.9);
+  min-width: 70px;
+}
+.tag-input:focus { border-color: #90caf9; }
+.tag-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; right: 0;
+  background: #fff; border: 1px solid #ddd; border-radius: 6px;
+  max-height: 180px; overflow-y: auto; margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10;
+}
+.tag-dropdown.open { display: block; }
+.tag-option { padding: 5px 10px; font-size: 12px; cursor: pointer; color: #333; }
+.tag-option:hover, .tag-option.highlighted { background: #e3f2fd; }
+
+.section-divider { width: 1px; height: 20px; background: rgba(0,0,0,0.12); flex-shrink: 0; }
+.reset-btn {
+  padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 500;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: none; color: #999; border: 1px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+}
+.reset-btn:hover { color: #c62828; border-color: #e57373; }
+.reset-btn.hidden { display: none; }
+
+/* Mobile: stack into rows */
+@media (max-width: 600px) {
+  #controls {
+    right: 8px; flex-wrap: wrap; gap: 6px;
+  }
+  .section-divider { display: none; }
+  .filter-section { flex-wrap: wrap; }
+  .filter-section.tags-section { width: 100%; }
+  .tag-input-wrap { flex-grow: 1; }
+  .mapboxgl-ctrl-top-right { top: auto !important; bottom: 30px !important; }
+}
+
+.mapboxgl-popup-content { padding: 12px 16px; max-width: 300px; }
+.popup-name { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.popup-address { color: #666; font-size: 13px; margin-bottom: 6px; }
+.popup-meta { font-size: 12px; color: #888; }
+.popup-meta span { display: inline-block; margin-right: 8px; }
+.popup-notes { font-size: 13px; color: #555; margin-top: 6px; font-style: italic; }
+.popup-website { font-size: 13px; margin-top: 6px; }
+.popup-website a { color: #0288D1; text-decoration: none; }
+.popup-website a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="controls"></div>
+<script>
+(function() {
+  var DATA = {"title": "Copenhagen", "places": [{"name": "\u00c5BEN K\u00f8dbyen", "address": "Slagtehusgade 15, 1715 K\u00f8benhavn, Denmark", "lat": 55.668253, "lon": 12.561568, "website": "http://www.aabenbryg.dk/aaben-koedbyen", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["brewery"], "root_categories": ["bar"]}, {"name": "BRUS", "address": "Guldbergsgade 29, 2200 K\u00f8benhavn, Denmark", "lat": 55.69215310000001, "lon": 12.5561452, "website": "http://tapperietbrus.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Ved Stranden 10", "address": "Ved Stranden 10, 1061 K\u00f8benhavn, Denmark", "lat": 55.6773697, "lon": 12.5816522, "website": null, "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Mikkeller Bar", "address": "Viktoriagade 8, B-C, 1655 K\u00f8benhavn, Denmark", "lat": 55.6719123, "lon": 12.5575373, "website": "https://mikkeller.com/locations/mikkeller-viktoriagade", "notes": "NYTimes Copenhagen guide\n\nThe original", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "AUTOPOUL", "address": "Hejrevej 31, 2400 K\u00f8benhavn, Denmark", "lat": 55.69997000000001, "lon": 12.5338811, "website": "https://instagram.com/autopoul?igshid=YmMyMTA2M2Y=", "notes": "NYTimes Copenhagen guide\n\nsummertime vibes outdors", "flags": [], "tags": ["outdoors"], "root_categories": ["bar"]}, {"name": "Pulp bar", "address": "Sankt Hans Torv 3, 2200 K\u00f8benhavn, Denmark", "lat": 55.69045930000001, "lon": 12.5604575, "website": "http://www.pulpbar.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Pompette", "address": "M\u00f8llegade 3, 2200 K\u00f8benhavn, Denmark", "lat": 55.690513, "lon": 12.5553376, "website": "http://etteetteette.dk/pompette", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Ruby", "address": "Nybrogade 10, 1203 K\u00f8benhavn, Denmark", "lat": 55.6767538, "lon": 12.5766669, "website": "https://rby.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Rosforth & Rosforth", "address": "Knippelsbrogade 10, 1400 K\u00f8benhavn, Denmark", "lat": 55.6741956, "lon": 12.5877283, "website": "http://www.rosforth.dk/", "notes": "NYTimes Copenhagen guide\n\nGeorgian wines too", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "bird : uptown", "address": "Gl. Kongevej 102, 1850 Frederiksberg, Denmark", "lat": 55.6757905, "lon": 12.5448136, "website": "http://birdcph.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["listening-bar"], "root_categories": ["bar"]}, {"name": "La Banchina", "address": "Refshalevej 141, 1432 K\u00f8benhavn, Denmark", "lat": 55.6893015, "lon": 12.6109311, "website": "http://www.labanchina.dk/", "notes": "NYTimes Copenhagen guide\n\n\"Beach club\" with spritzes", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Alouette", "address": "Kronprinsessegade 8, 1306 K\u00f8benhavn, Denmark", "lat": 55.68316009999999, "lon": 12.581445, "website": "http://www.restaurantalouette.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["tasting-menu"], "root_categories": ["restaurant"]}, {"name": "Poulette", "address": "M\u00f8llegade 1, 2200 K\u00f8benhavn, Denmark", "lat": 55.6904923, "lon": 12.5552853, "website": "http://etteetteette.dk/poulette", "notes": "NYTimes Copenhagen guide\n\nExpect a line (thanks to Dua Lipa and \u201cThe Bear\u201d) outside this popular takeout spot serving fiery Sichuan-pepper-spiced fried-chicken and mapo-tofu sandwiches that are best enjoyed after a drink or two at the wine bar next door.", "flags": [], "tags": ["chinese", "sichuanese"], "root_categories": ["restaurant"]}, {"name": "Silberbauers Bistro", "address": "J\u00e6gersborggade 40, 2200 K\u00f8benhavn, Denmark", "lat": 55.69334079999999, "lon": 12.5433511, "website": "http://www.silberbauers.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["french"], "root_categories": ["restaurant"]}, {"name": "K\u00f8dbyens Fiskebar", "address": "Fl\u00e6sketorvet 100, 1711 K\u00f8benhavn, Denmark", "lat": 55.6678839, "lon": 12.5592894, "website": "https://fiskebaren.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["seafood"], "root_categories": ["restaurant"]}, {"name": "akm\u0113", "address": "Sandkaj 39, 2150 K\u00f8benhavn, Denmark", "lat": 55.7068688, "lon": 12.5985502, "website": "https://www.akme.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["tasting-menu"], "root_categories": ["restaurant"]}, {"name": "Barr", "address": "Strandgade 93, 1401 K\u00f8benhavn, Denmark", "lat": 55.67781859999999, "lon": 12.5963002, "website": "https://restaurantbarr.com/", "notes": "NYTimes Copenhagen guide\n\nSchnitzel and hearty north-european", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Sanchez", "address": "Istedgade 60, 1658 K\u00f8benhavn, Denmark", "lat": 55.6698114, "lon": 12.5550536, "website": "https://lovesanchez.com/sanchez", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["tasting-menu"], "root_categories": ["restaurant"]}, {"name": "Nr.30 Spisested & Vinbar", "address": "Nansensgade 30, 1366 K\u00f8benhavn, Denmark", "lat": 55.6818955, "lon": 12.5634124, "website": "http://www.nr30.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["natural-wine"], "root_categories": ["restaurant"]}, {"name": "ESSE Restaurant", "address": "Trelleborggade 13a, 2100 K\u00f8benhavn, Denmark", "lat": 55.7067855, "lon": 12.5938805, "website": "http://www.esserestaurant.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["tasting-menu"], "root_categories": ["restaurant"]}, {"name": "Folkehuset Absalon", "address": "S\u00f8nder Blvd. 73, 1720 K\u00f8benhavn, Denmark", "lat": 55.6653981, "lon": 12.5502979, "website": "http://absaloncph.dk/", "notes": "Folkehuset Absalon\n\nCommunal eating in community center", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Bar Vitrine", "address": "M\u00f8ntergade 5, 1116 K\u00f8benhavn, Denmark", "lat": 55.6819583, "lon": 12.5794641, "website": "http://www.barvitrine.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["walk-ins only"], "root_categories": ["bar"]}, {"name": "Gr\u00f8d", "address": "Vesterbrogade 105B, 1620 K\u00f8benhavn, Denmark", "lat": 55.671394, "lon": 12.5453549, "website": "https://www.groed.com/", "notes": "NYTimes Copenhagen guide\n\nporridge bar", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Gr\u00f8d", "address": "kl tv, J\u00e6gersborggade 50, 2200 K\u00f8benhavn, Denmark", "lat": 55.6935984, "lon": 12.5429648, "website": "https://groed.com/", "notes": "NYTimes Copenhagen guide\n\nporridge bar", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Seks", "address": "Krystalgade 6, 1172 K\u00f8benhavn, Denmark", "lat": 55.681242, "lon": 12.5743989, "website": "https://www.sekscph.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["groceries"]}, {"name": "Atelier September", "address": "Kronprinsessegade 62, 1306 K\u00f8benhavn, Denmark", "lat": 55.6873916, "lon": 12.5849268, "website": "https://cafeatelierseptember.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Amator", "address": "Nordre Frihavnsgade 7, 2100 K\u00f8benhavn, Denmark", "lat": 55.7001854, "lon": 12.5784245, "website": "https://www.instagram.com/amatorcph/", "notes": "NYTimes Copenhagen guide\n\nomelette", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Selma", "address": "R\u00f8mersgade 20, 1362 K\u00f8benhavn, Denmark", "lat": 55.684666, "lon": 12.5698386, "website": "http://selmacopenhagen.dk/", "notes": "NYTimes Copenhagen guide\n\nsmorrebrod", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "D\u00d8P - The Organic Hotdog Stand", "address": "K\u00f8bmagergade 52, 1150 K\u00f8benhavn, Denmark", "lat": 55.681251, "lon": 12.5760794, "website": "http://doep.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["hotdog"], "root_categories": ["restaurant"]}, {"name": "D\u00d8P - The Organic Sausage man", "address": "Amagertorv 31, 1160 K\u00f8benhavn, Denmark", "lat": 55.6786438, "lon": 12.5766915, "website": "http://www.doep.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["hotdog"], "root_categories": ["restaurant"]}, {"name": "John\u2019s Hotdog Deli", "address": "Bernstorffsgade 18, 1570 K\u00f8benhavn, Denmark", "lat": 55.6731501, "lon": 12.5658452, "website": "https://www.facebook.com/johnshotdogdeli?mibextid=LQQJ4d", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["hotdog"], "root_categories": ["restaurant"]}, {"name": "Prolog Coffee Bar Meatpacking District", "address": "H\u00f8kerboderne 16, 1712 K\u00f8benhavn, Denmark", "lat": 55.6682905, "lon": 12.5575308, "website": "http://prologcoffee.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Lille Bakery", "address": "Refshalevej 213B, 1432 K\u00f8benhavn, Denmark", "lat": 55.6900548, "lon": 12.6133271, "website": "http://www.lillebakery.com/", "notes": "NYTimes Copenhagen guide\n\nsourdough bun with cheese (bolle med ost)", "flags": [], "tags": [], "root_categories": ["groceries"]}, {"name": "Juno the bakery", "address": "\u00c5rhusgade 48, 2100 K\u00f8benhavn, Denmark", "lat": 55.7061815, "lon": 12.5818152, "website": "https://www.junothebakery.com/", "notes": "NYTimes Copenhagen guide\n\nCardamom buns", "flags": [], "tags": [], "root_categories": ["groceries"]}, {"name": "Lokal ApS.", "address": "S\u00f8nder Blvd. 59, 1720 K\u00f8benhavn, Denmark", "lat": 55.6660799, "lon": 12.5520445, "website": "https://www.lokalcph.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["ceramics"], "root_categories": ["restaurant"]}, {"name": "Illums Bolighus", "address": "Amagertorv 10, 1160 K\u00f8benhavn, Denmark", "lat": 55.67887440000001, "lon": 12.5786292, "website": "http://www.illumsbolighus.dk/", "notes": "NYTimes Copenhagen guide\n\nThis three-floor emporium of Scandinavian brands is the city\u2019s premier department store for interior design. It\u2019s packed with furniture, lighting, tableware and textiles from timeless midcentury pieces to modern classics.", "flags": [], "tags": ["furniture"], "root_categories": ["shopping"]}, {"name": "Alida Marstrand", "address": "Bredgade 14, 1260 K\u00f8benhavn, Denmark", "lat": 55.68167159999999, "lon": 12.5882775, "website": "http://www.marstrandchokolade.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["chocolate"], "root_categories": ["restaurant"]}, {"name": "Frama", "address": "Fredericiagade 57, 1310 K\u00f8benhavn, Denmark", "lat": 55.6869258, "lon": 12.5860565, "website": "http://www.framacph.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["furniture"], "root_categories": ["shopping"]}, {"name": "CAN", "address": "Tullinsgade 5, 1618 K\u00f8benhavn, Denmark", "lat": 55.6737377, "lon": 12.5514517, "website": "http://yeswecancan.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["shopping"]}, {"name": "Stilleben", "address": "Christian IX's Gade 10, 1111 K\u00f8benhavn, Denmark", "lat": 55.68230699999999, "lon": 12.5810473, "website": "https://stilleben.dk/", "notes": "NYTimes Copenhagen guide\n\nMost design-savvy locals have something in their apartment from this home design store, which sells a mix of art prints, terracotta coffee mugs, glazed ceramic serving bowls and pastel water pitchers in an airy storefront near Torvehallerne.", "flags": [], "tags": [], "root_categories": ["shopping"]}, {"name": "Tage Andersen", "address": "Ny Adelgade 12, 1104 K\u00f8benhavn, Denmark", "lat": 55.6814444, "lon": 12.5834972, "website": "http://tage-andersen.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["shopping"]}, {"name": "Studio Arhoj Study", "address": "N\u00f8rregade 7, st., th, 1165 K\u00f8benhavn, Denmark", "lat": 55.6790025, "lon": 12.5718797, "website": "https://arhoj.com/", "notes": "NYTimes Copenhagen guide\n\n\"whimsical ceramics\"", "flags": [], "tags": ["ceramics"], "root_categories": ["shopping"]}, {"name": "Studio Arhoj", "address": "Skindergade 7, st, 1159 K\u00f8benhavn, Denmark", "lat": 55.6805799, "lon": 12.5758027, "website": "http://arhoj.com/", "notes": "NYTimes Copenhagen guide\n\n\"whimsical ceramics\"", "flags": [], "tags": ["ceramics"], "root_categories": ["shopping"]}, {"name": "HAY House", "address": "\u00d8stergade 61, 2, 1100 K\u00f8benhavn, Denmark", "lat": 55.6789792, "lon": 12.580129, "website": "https://www.hay.com/", "notes": "NYTimes Copenhagen guide", "flags": ["Visited"], "tags": [], "root_categories": ["shopping"]}, {"name": "Keramiker Inge Vincents", "address": "J\u00e6gersborggade 43, kl, 2200 K\u00f8benhavn, Denmark", "lat": 55.6931443, "lon": 12.5431922, "website": "http://www.vincents.dk/", "notes": "NYTimes Copenhagen guide", "flags": ["Visited"], "tags": ["ceramics"], "root_categories": ["shopping"]}, {"name": "V\u00e6rnedamsvej", "address": "V\u00e6rnedamsvej, Denmark", "lat": 55.6736623, "lon": 12.549916, "website": null, "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["shopping"]}, {"name": "J\u00e6gersborggade", "address": "J\u00e6gersborggade, 2200 K\u00f8benhavn, Denmark", "lat": 55.6923309, "lon": 12.5444796, "website": null, "notes": null, "flags": [], "tags": [], "root_categories": ["shopping"]}, {"name": "\u00d8rstedsparken", "address": "N\u00f8rre Voldgade 1, 1358 K\u00f8benhavn, Denmark", "lat": 55.6810135, "lon": 12.5669485, "website": "http://www.kk.dk/groenneomraader", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["park"]}, {"name": "Sushi Anaba", "address": "Mariehamngade 23, 2150 K\u00f8benhavn, Denmark", "lat": 55.7064628, "lon": 12.6022382, "website": "https://www.sushianaba.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["sushi", "japanese"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez Torvehallerne Hal 1", "address": "R\u00f8mersgade 19, 1362 K\u00f8benhavn, Denmark", "lat": 55.6837977, "lon": 12.5688866, "website": "http://lovesanchez.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez Broens Gadek\u00f8kken", "address": "Strandgade 95, 1401 K\u00f8benhavn, Denmark", "lat": 55.6778577, "lon": 12.5967911, "website": "http://lovesanchez.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez Nordhavn", "address": "Hamborg Pl. 5, 2150 K\u00f8benhavn, Denmark", "lat": 55.7078043, "lon": 12.5971073, "website": "https://lovesanchez.com/hija-de-sanchez/nordhavn/hours-and-info", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez Carlsberg", "address": "Franciska Clausens Pl. 27, 1799 K\u00f8benhavn, Denmark", "lat": 55.6659186, "lon": 12.5341947, "website": "https://lovesanchez.com/hija-de-sanchez/carlsberg-byen/hours-and-info", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez Torvehallerne", "address": "Frederiksborggade 21, 1360 K\u00f8benhavn, Denmark", "lat": 55.6836747, "lon": 12.5692206, "website": "https://lovesanchez.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Hija de Sanchez K\u00f8dbyen", "address": "Slagterboderne 8, 1716 K\u00f8benhavn, Denmark", "lat": 55.6689187, "lon": 12.5585193, "website": "https://lovesanchez.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["mexican"], "root_categories": ["restaurant"]}, {"name": "Andersen & Maillard", "address": "Antwerpengade 10, 2150 K\u00f8benhavn, Denmark", "lat": 55.70720129999999, "lon": 12.5966835, "website": "https://www.andersenmaillard.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Andersen & Maillard", "address": "N\u00f8rrebrogade 62, 2200 K\u00f8benhavn, Denmark", "lat": 55.6903659, "lon": 12.5551042, "website": "https://www.andersenmaillard.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Andersen & Maillard", "address": "Ny \u00d8stergade 15, 1101 K\u00f8benhavn, Denmark", "lat": 55.6813728, "lon": 12.5824663, "website": "https://www.andersenmaillard.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Badezone Sandkaj", "address": "Sandkaj 27, 2150 K\u00f8benhavn, Denmark", "lat": 55.7066911, "lon": 12.5975499, "website": "https://svoemkbh.kk.dk/", "notes": "NYTimes Copenhagen guide\n\nSwimming zone", "flags": [], "tags": [], "root_categories": ["landmark"]}, {"name": "Konditaget L\u00fcders", "address": "P-hus L\u00fcders p\u00e5 Helsinkigade, Helsinkigade 30, 2150 K\u00f8benhavn, Denmark", "lat": 55.7077026, "lon": 12.5977802, "website": "https://byoghavn.dk/nordhavn/konditaget-luders/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["park"]}, {"name": "Frederiksberg Swimming Pool & Spa", "address": "Helgesvej 29, 2000 Frederiksberg, Denmark", "lat": 55.6843789, "lon": 12.5320794, "website": "https://frederiksbergbadene.frederiksberg.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["spa"]}, {"name": "Hart", "address": "Gl. Kongevej 109, 1850 Frederiksberg, Denmark", "lat": 55.6753846, "lon": 12.5455049, "website": "http://hartbageri.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["groceries"]}, {"name": "Auren's Deli", "address": "Godth\u00e5bsvej 35, st. Th, 2000 Frederiksberg, Denmark", "lat": 55.68652179999999, "lon": 12.5327533, "website": "https://aurensdeli.superbexperience.com/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Superkilen Park", "address": "N\u00f8rrebrogade 210, 2200 K\u00f8benhavn, Denmark", "lat": 55.70134239999999, "lon": 12.5426383, "website": "https://www.visitcopenhagen.com/copenhagen/planning/superkilen-park-gdk707822", "notes": "NYTimes Copenhagen guide\n\nLooks like skate park and maybe playground?", "flags": [], "tags": [], "root_categories": ["park"]}, {"name": "Assistens Cemetery", "address": "Kapelvej 2, 2200 K\u00f8benhavn, Denmark", "lat": 55.6910102, "lon": 12.5501533, "website": "https://www.kk.dk/brug-byen/byens-groenne-oaser/koebenhavns-kirkegaarde/assistens-kirkegaard", "notes": "NYTimes Copenhagen guide", "flags": ["Visited"], "tags": [], "root_categories": ["landmark"]}, {"name": "B\u00e6st", "address": "Guldbergsgade 29, 2200 K\u00f8benhavn, Denmark", "lat": 55.6923117, "lon": 12.5560779, "website": "http://baest.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["pizza"], "root_categories": ["restaurant"]}, {"name": "Darcy\u2019s Kaffe", "address": "Rantzausgade 2, 2200 K\u00f8benhavn, Denmark", "lat": 55.6853205, "lon": 12.5532861, "website": "http://www.darcyskaffe.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Gaza Grill N\u00f8rrebro", "address": "F\u00e6lledvej 22C, 2200 K\u00f8benhavn, Denmark", "lat": 55.6903413, "lon": 12.5609069, "website": "http://www.gazagrill.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["middle-eastern"], "root_categories": ["restaurant"]}, {"name": "Overgaden Institut for Samtidskunst", "address": "Overgaden Neden Vandet 17, 1414 K\u00f8benhavn, Denmark", "lat": 55.6724267, "lon": 12.5901339, "website": "http://overgaden.org/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["landmark"]}, {"name": "Warpigs Brewpub", "address": "Fl\u00e6sketorvet 25, 37, 1711 K\u00f8benhavn, Denmark", "lat": 55.66857299999999, "lon": 12.5598471, "website": "https://warpigs.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["barbecue"], "root_categories": ["restaurant"]}, {"name": "Com\u00e9 RICE Kitchen", "address": "Fl\u00e6sketorvet 44, 1711 K\u00f8benhavn, Denmark", "lat": 55.6673057, "lon": 12.5585399, "website": "http://www.comefood.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": ["japanese"], "root_categories": ["restaurant"]}, {"name": "Pineau", "address": "S\u00f8nder Blvd. 58, 1720 K\u00f8benhavn, Denmark", "lat": 55.666339, "lon": 12.551308, "website": "https://www.pineau.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["bar"]}, {"name": "Kadeau", "address": "Wildersgade 10B, 1408 K\u00f8benhavn, Denmark", "lat": 55.6722944, "lon": 12.5889809, "website": "http://kadeau.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "B\u00c5DEN", "address": "Wilders Pl. 15c, 1403 K\u00f8benhavn, Denmark", "lat": 55.6755396, "lon": 12.5948708, "website": "https://baadencph.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Broens Street Food", "address": "Strandgade 95, 1401 K\u00f8benhavn, Denmark", "lat": 55.6778772, "lon": 12.5968088, "website": "https://broensstreetfood.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "H\u00f8st", "address": "N\u00f8rre Farimagsgade 41, 1364 K\u00f8benhavn, Denmark", "lat": 55.6833518, "lon": 12.5661528, "website": "https://cofoco.dk/hoest/?utm_source=google&utm_medium=organic&utm_campaign=gmb-website&utm_content=hoest", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "King Hans Cellar", "address": "Ving\u00e5rdstr\u00e6de 6, 1070 K\u00f8benhavn, Denmark", "lat": 55.6787748, "lon": 12.584143, "website": "http://www.konghans.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "Den Vandrette", "address": "Havnegade 53A, 1058 K\u00f8benhavn, Denmark", "lat": 55.6786597, "lon": 12.5924081, "website": "https://www.denvandrette.dk/", "notes": "NYTimes Copenhagen guide", "flags": [], "tags": [], "root_categories": ["restaurant"]}, {"name": "The Little Mermaid", "address": "Langelinie, 2100 K\u00f8benhavn \u00d8, Denmark", "lat": 55.69286, "lon": 12.5992828, "website": null, "notes": null, "flags": [], "tags": [], "root_categories": ["landmark"]}, {"name": "Louisiana Museum of Modern Art", "address": "Gl Strandvej 13, 3050 Humleb\u00e6k, Denmark", "lat": 55.969549, "lon": 12.542784, "website": "https://louisiana.dk/", "notes": null, "flags": ["Visited"], "tags": [], "root_categories": ["landmark"]}, {"name": "Aamanns 1921", "address": "Niels Hemmingsens Gade 19, 21, 1153 K\u00f8benhavn, Denmark", "lat": 55.6802364, "lon": 12.5758312, "website": "https://aamanns.dk/restaurants/aamanns-1921/", "notes": "Smorrebrod suggestion from NYT (seasonal offerings)", "flags": [], "tags": ["seafood"], "root_categories": ["restaurant"]}, {"name": "Restaurant Pal\u00e6gade", "address": "Pal\u00e6gade 8, 1261 K\u00f8benhavn, Denmark", "lat": 55.6822917, "lon": 12.5864549, "website": "https://formelfamily.dk/palaegade", "notes": "Smorrebrod suggestion from NYT (fine-dining version)", "flags": [], "tags": ["seafood"], "root_categories": ["restaurant"]}, {"name": "Sch\u00f8nnemann", "address": "Hauser Pl. 16, 1127 K\u00f8benhavn, Denmark", "lat": 55.6827797, "lon": 12.5761162, "website": "http://www.restaurantschonnemann.dk/", "notes": "Smorrebrod suggestion from NYT", "flags": [], "tags": ["seafood"], "root_categories": ["restaurant"]}, {"name": "Tivoli Gardens", "address": "Vesterbrogade 3, 1630 K\u00f8benhavn V, Denmark", "lat": 55.6736629, "lon": 12.5682338, "website": "https://www.tivoli.dk/?&utm_source=google&utm_medium=organic&utm_campaign=gmb&utm_content=website_button", "notes": null, "flags": [], "tags": ["touristy"], "root_categories": ["landmark"]}, {"name": "Nyhavn", "address": "Nyhavn, Indre By, Denmark", "lat": 55.679776, "lon": 12.5913041, "website": null, "notes": null, "flags": [], "tags": ["touristy"], "root_categories": ["landmark"]}], "root_categories": ["bar", "groceries", "landmark", "park", "restaurant", "shopping", "spa"], "all_tags": ["barbecue", "brewery", "ceramics", "chinese", "chocolate", "french", "furniture", "hotdog", "japanese", "listening-bar", "mexican", "middle-eastern", "natural-wine", "outdoors", "pizza", "seafood", "sichuanese", "sushi", "tasting-menu", "touristy", "walk-ins only"], "initial_bounds": [12.5320794, 55.6653981, 12.6133271, 55.969549], "generated_at": "2026-08-18T01:56:59.184437+00:00"};
+  var INITIAL_BOUNDS = [12.5320794, 55.6653981, 12.6133271, 55.969549];
+  var CATEGORY_ICONS = {
+    'restaurant': 'restaurant',
+    'bar': 'bar',
+    'groceries': 'grocery',
+    'gym': 'fitness-centre',
+    'landmark': 'monument',
+    'shopping': 'shop',
+    'spa': 'massage',
+    'Uncategorized': 'marker'
+  };
+  var flagNames = ['Favorite', 'Queued', 'Visited'];
+  var allTags = DATA.all_tags || [];
+  var PRIMARY_CATS = ['restaurant', 'bar'];
+
+  function toSlug(s) { return s.toLowerCase().replace(/\s+/g, '-'); }
+
+  function categoryIcon(rootCategories) {
+    for (var i = 0; i < rootCategories.length; i++) {
+      var icon = CATEGORY_ICONS[rootCategories[i]];
+      if (icon) return icon;
+    }
+    return 'marker';
+  }
+
+  // Split categories into primary (always visible) and secondary ("More" dropdown)
+  var primaryCats = [];
+  var secondaryCats = [];
+  DATA.root_categories.sort().forEach(function(cat) {
+    if (PRIMARY_CATS.indexOf(cat) !== -1) primaryCats.push(cat);
+    else secondaryCats.push(cat);
+  });
+  // Reorder primary cats to match desired order
+  primaryCats.sort(function(a, b) { return PRIMARY_CATS.indexOf(a) - PRIMARY_CATS.indexOf(b); });
+  // Push Uncategorized to end of secondary list
+  secondaryCats.sort(function(a, b) {
+    if (a === 'Uncategorized') return 1;
+    if (b === 'Uncategorized') return -1;
+    return a.localeCompare(b);
+  });
+
+  // Build GeoJSON
+  var geojson = {
+    type: 'FeatureCollection',
+    features: DATA.places.map(function(p) {
+      var props = {
+        name: p.name,
+        address: p.address || '',
+        website: p.website || '',
+        notes: p.notes || '',
+        flags_str: p.flags.join(', '),
+        tags_str: p.tags.join(', '),
+        categories_str: p.root_categories.join(', '),
+        icon: categoryIcon(p.root_categories),
+        flags_list: '|' + p.flags.join('|') + '|',
+        tags_list: '|' + p.tags.join('|') + '|',
+        cats_list: '|' + p.root_categories.join('|') + '|'
+      };
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+        properties: props
+      };
+    })
+  };
+
+  mapboxgl.accessToken = 'pk.eyJ1IjoidXJpbGFzZXJzb24iLCJhIjoiY21tZ2w5azhuMDloaTJwcG45amJndDN2eSJ9.YxIQPUB90P8FuijC9egzeg';
+  // Shape right-to-left scripts (Hebrew, Arabic) in on-canvas labels. Lazy:
+  // only fetched when RTL text is actually present, so LTR maps pay nothing.
+  mapboxgl.setRTLTextPlugin(
+    'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js',
+    null,
+    true
+  );
+  var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/streets-v12',
+    center: [(INITIAL_BOUNDS[0] + INITIAL_BOUNDS[2]) / 2, (INITIAL_BOUNDS[1] + INITIAL_BOUNDS[3]) / 2],
+    zoom: 2
+  });
+  map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  map.addControl(new mapboxgl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+    showUserHeading: true
+  }), 'top-right');
+
+  var activeFlags = new Set();
+  var activeCategories = new Set();
+  var activeTags = new Set();
+
+  // Build controls
+  var controlsEl = document.getElementById('controls');
+
+  // --- Categories section ---
+  var catSection = document.createElement('div');
+  catSection.className = 'filter-section';
+  var catLabel = document.createElement('span');
+  catLabel.className = 'section-label';
+  catLabel.textContent = 'Cat';
+  catSection.appendChild(catLabel);
+
+  // Primary category chips (always visible)
+  primaryCats.forEach(function(cat) {
+    var chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = cat;
+    chip.dataset.group = 'cat';
+    chip.dataset.value = cat;
+    chip.addEventListener('click', function() {
+      if (activeCategories.has(cat)) { activeCategories.delete(cat); chip.classList.remove('active'); }
+      else { activeCategories.add(cat); chip.classList.add('active'); }
+      updateMoreChip();
+      updateHash(); applyFilters(); updateResetBtn();
+    });
+    catSection.appendChild(chip);
+  });
+
+  // "More" dropdown for secondary categories
+  if (secondaryCats.length > 0) {
+    var moreWrap = document.createElement('div');
+    moreWrap.className = 'more-wrap';
+    var moreChip = document.createElement('div');
+    moreChip.className = 'more-chip';
+    moreChip.textContent = 'more';
+    moreWrap.appendChild(moreChip);
+
+    var moreDropdown = document.createElement('div');
+    moreDropdown.className = 'more-dropdown';
+    secondaryCats.forEach(function(cat) {
+      var chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.textContent = cat;
+      chip.dataset.group = 'cat';
+      chip.dataset.value = cat;
+      chip.addEventListener('click', function() {
+        if (activeCategories.has(cat)) { activeCategories.delete(cat); chip.classList.remove('active'); }
+        else { activeCategories.add(cat); chip.classList.add('active'); }
+        updateMoreChip();
+        updateHash(); applyFilters();
+      });
+      moreDropdown.appendChild(chip);
+    });
+    moreWrap.appendChild(moreDropdown);
+
+    moreChip.addEventListener('click', function(e) {
+      e.stopPropagation();
+      moreDropdown.classList.toggle('open');
+    });
+
+    catSection.appendChild(moreWrap);
+  }
+
+  function updateMoreChip() {
+    if (!moreChip) return;
+    var count = 0;
+    secondaryCats.forEach(function(c) { if (activeCategories.has(c)) count++; });
+    moreChip.textContent = count > 0 ? 'more (' + count + ')' : 'more';
+    moreChip.classList.toggle('has-active', count > 0);
+  }
+
+  controlsEl.appendChild(catSection);
+
+  // Divider
+  var div1 = document.createElement('div');
+  div1.className = 'section-divider';
+  controlsEl.appendChild(div1);
+
+  // --- Flags section ---
+  var flagSection = document.createElement('div');
+  flagSection.className = 'filter-section';
+  var flagLabel = document.createElement('span');
+  flagLabel.className = 'section-label';
+  flagLabel.textContent = 'Flags';
+  flagSection.appendChild(flagLabel);
+  flagNames.forEach(function(flag) {
+    var chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = flag;
+    chip.dataset.group = 'flag';
+    chip.dataset.value = flag;
+    chip.addEventListener('click', function() {
+      if (activeFlags.has(flag)) { activeFlags.delete(flag); chip.classList.remove('active'); }
+      else { activeFlags.add(flag); chip.classList.add('active'); }
+      updateHash(); applyFilters(); updateResetBtn();
+    });
+    flagSection.appendChild(chip);
+  });
+  controlsEl.appendChild(flagSection);
+
+  // Divider
+  var div2 = document.createElement('div');
+  div2.className = 'section-divider';
+  controlsEl.appendChild(div2);
+
+  // --- Tags section ---
+  var tagSection = document.createElement('div');
+  tagSection.className = 'filter-section tags-section';
+  var tagLabel = document.createElement('span');
+  tagLabel.className = 'section-label';
+  tagLabel.textContent = 'Tags';
+  tagSection.appendChild(tagLabel);
+
+  var tagChipsContainer = document.createElement('span');
+  tagChipsContainer.style.cssText = 'display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;';
+  tagSection.appendChild(tagChipsContainer);
+
+  var tagInputWrap = document.createElement('div');
+  tagInputWrap.className = 'tag-input-wrap';
+  var tagInput = document.createElement('input');
+  tagInput.className = 'tag-input';
+  tagInput.type = 'text';
+  tagInput.placeholder = 'search...';
+  tagInputWrap.appendChild(tagInput);
+
+  var tagDropdown = document.createElement('div');
+  tagDropdown.className = 'tag-dropdown';
+  tagInputWrap.appendChild(tagDropdown);
+  tagSection.appendChild(tagInputWrap);
+  controlsEl.appendChild(tagSection);
+
+  // --- Reset button ---
+  var resetBtn = document.createElement('div');
+  resetBtn.className = 'reset-btn hidden';
+  resetBtn.textContent = 'reset';
+  resetBtn.addEventListener('click', function() {
+    activeCategories.clear();
+    activeFlags.clear();
+    activeTags.clear();
+    controlsEl.querySelectorAll('.chip.active').forEach(function(c) { c.classList.remove('active'); });
+    updateMoreChip();
+    renderTagChips();
+    updateHash();
+    applyFilters();
+    updateResetBtn();
+  });
+  controlsEl.appendChild(resetBtn);
+
+  function updateResetBtn() {
+    var hasAny = activeCategories.size > 0 || activeFlags.size > 0 || activeTags.size > 0;
+    resetBtn.classList.toggle('hidden', !hasAny);
+  }
+
+  var highlightedIndex = -1;
+
+  function renderTagDropdown() {
+    var query = tagInput.value.toLowerCase().trim();
+    tagDropdown.innerHTML = '';
+    highlightedIndex = -1;
+    if (!query) { tagDropdown.classList.remove('open'); return; }
+    var matches = allTags.filter(function(t) {
+      return t.toLowerCase().indexOf(query) !== -1 && !activeTags.has(t);
+    }).slice(0, 15);
+    if (matches.length === 0) { tagDropdown.classList.remove('open'); return; }
+    matches.forEach(function(tag) {
+      var opt = document.createElement('div');
+      opt.className = 'tag-option';
+      opt.textContent = tag;
+      opt.addEventListener('mousedown', function(e) { e.preventDefault(); addTag(tag); });
+      tagDropdown.appendChild(opt);
+    });
+    tagDropdown.classList.add('open');
+  }
+
+  function addTag(tag) {
+    activeTags.add(tag);
+    tagInput.value = '';
+    tagDropdown.classList.remove('open');
+    renderTagChips();
+    updateHash();
+    applyFilters();
+    updateResetBtn();
+  }
+
+  function removeTag(tag) {
+    activeTags.delete(tag);
+    renderTagChips();
+    updateHash();
+    applyFilters();
+    updateResetBtn();
+  }
+
+  function renderTagChips() {
+    tagChipsContainer.innerHTML = '';
+    activeTags.forEach(function(tag) {
+      var chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.innerHTML = escHtml(tag) + ' <span class="remove">&times;</span>';
+      chip.querySelector('.remove').addEventListener('click', function() { removeTag(tag); });
+      tagChipsContainer.appendChild(chip);
+    });
+  }
+
+  tagInput.addEventListener('input', renderTagDropdown);
+  tagInput.addEventListener('focus', renderTagDropdown);
+  tagInput.addEventListener('blur', function() {
+    setTimeout(function() { tagDropdown.classList.remove('open'); }, 150);
+  });
+  tagInput.addEventListener('keydown', function(e) {
+    var options = tagDropdown.querySelectorAll('.tag-option');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      highlightedIndex = Math.min(highlightedIndex + 1, options.length - 1);
+      updateHighlight(options);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      highlightedIndex = Math.max(highlightedIndex - 1, 0);
+      updateHighlight(options);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && options[highlightedIndex]) {
+        addTag(options[highlightedIndex].textContent);
+      }
+    } else if (e.key === 'Escape') {
+      tagDropdown.classList.remove('open');
+      tagInput.blur();
+    }
+  });
+
+  function updateHighlight(options) {
+    for (var i = 0; i < options.length; i++) {
+      options[i].classList.toggle('highlighted', i === highlightedIndex);
+    }
+    if (options[highlightedIndex]) {
+      options[highlightedIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // Close "more" dropdown when clicking elsewhere
+  document.addEventListener('click', function() {
+    if (moreDropdown) moreDropdown.classList.remove('open');
+  });
+
+  // --- Hash parsing/updating ---
+  function parseHash() {
+    var hash = window.location.hash.replace('#', '');
+    if (!hash) return;
+    var pairs = hash.split('&');
+    pairs.forEach(function(pair) {
+      var kv = pair.split('=');
+      if (kv.length !== 2) return;
+      var key = kv[0];
+      var values = decodeURIComponent(kv[1]).split(',').filter(Boolean);
+      if (key === 'cats') {
+        var catSlugs = DATA.root_categories.map(toSlug);
+        values.forEach(function(slug) {
+          var idx = catSlugs.indexOf(slug);
+          if (idx !== -1) activeCategories.add(DATA.root_categories[idx]);
+        });
+      } else if (key === 'flags') {
+        var flagSlugs = flagNames.map(toSlug);
+        values.forEach(function(slug) {
+          var idx = flagSlugs.indexOf(slug);
+          if (idx !== -1) activeFlags.add(flagNames[idx]);
+        });
+      } else if (key === 'tags') {
+        values.forEach(function(tag) {
+          if (allTags.indexOf(tag) !== -1) activeTags.add(tag);
+        });
+      }
+    });
+    // Sync chip UI state
+    controlsEl.querySelectorAll('.chip').forEach(function(chip) {
+      if (chip.dataset.group === 'cat' && activeCategories.has(chip.dataset.value)) chip.classList.add('active');
+      if (chip.dataset.group === 'flag' && activeFlags.has(chip.dataset.value)) chip.classList.add('active');
+    });
+    updateMoreChip();
+    renderTagChips();
+  }
+
+  function updateHash() {
+    var parts = [];
+    if (activeCategories.size > 0) {
+      var cats = [];
+      activeCategories.forEach(function(c) { cats.push(toSlug(c)); });
+      parts.push('cats=' + cats.join(','));
+    }
+    if (activeFlags.size > 0) {
+      var flags = [];
+      activeFlags.forEach(function(f) { flags.push(toSlug(f)); });
+      parts.push('flags=' + flags.join(','));
+    }
+    if (activeTags.size > 0) {
+      var tags = [];
+      activeTags.forEach(function(t) { tags.push(encodeURIComponent(t)); });
+      parts.push('tags=' + tags.join(','));
+    }
+    if (parts.length > 0) {
+      history.replaceState(null, '', '#' + parts.join('&'));
+    } else {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  }
+
+  // --- Filter logic ---
+  // Categories: OR, Flags: AND, Tags: AND, groups AND together
+  function applyFilters() {
+    var hasFilters = activeCategories.size > 0 || activeFlags.size > 0 || activeTags.size > 0;
+    if (!hasFilters) {
+      map.setFilter('spots-icons', null);
+      return;
+    }
+    var parts = ['all'];
+
+    if (activeCategories.size > 0) {
+      var catPart = ['any'];
+      activeCategories.forEach(function(c) {
+        catPart.push(['in', '|' + c + '|', ['get', 'cats_list']]);
+      });
+      parts.push(catPart);
+    }
+
+    if (activeFlags.size > 0) {
+      activeFlags.forEach(function(f) {
+        parts.push(['in', '|' + f + '|', ['get', 'flags_list']]);
+      });
+    }
+
+    if (activeTags.size > 0) {
+      activeTags.forEach(function(t) {
+        parts.push(['in', '|' + t + '|', ['get', 'tags_list']]);
+      });
+    }
+
+    map.setFilter('spots-icons', parts.length > 1 ? parts : null);
+  }
+
+  function makePopupHTML(p) {
+    var html = '<div class="popup-name">' + escHtml(p.name) + '</div>';
+    if (p.address) html += '<div class="popup-address">' + escHtml(p.address) + '</div>';
+    var meta = '';
+    if (p.categories_str) meta += '<span>' + escHtml(p.categories_str) + '</span>';
+    if (p.flags_str) meta += '<span>' + escHtml(p.flags_str) + '</span>';
+    if (p.tags_str) meta += '<span>' + escHtml(p.tags_str) + '</span>';
+    if (meta) html += '<div class="popup-meta">' + meta + '</div>';
+    if (p.notes) html += '<div class="popup-notes">' + linkify(p.notes) + '</div>';
+    var links = '';
+    if (p.website) links += '<a href="' + escAttr(p.website) + '" target="_blank" rel="noopener">Website</a>';
+    var gmapsQuery = encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''));
+    var gmapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + gmapsQuery;
+    if (links) links += ' &middot; ';
+    links += '<a href="' + escAttr(gmapsUrl) + '" target="_blank" rel="noopener">Google Maps</a>';
+    html += '<div class="popup-website">' + links + '</div>';
+    return html;
+  }
+
+  function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function linkify(s) {
+    var escaped = escHtml(s);
+    return escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  }
+
+  map.on('load', function() {
+    parseHash();
+
+    map.getStyle().layers.forEach(function(layer) {
+      if (layer.type === 'symbol' && /poi/i.test(layer.id)) {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    });
+
+    map.addSource('spots', { type: 'geojson', data: geojson });
+
+    map.addLayer({
+      id: 'spots-icons',
+      type: 'symbol',
+      source: 'spots',
+      layout: {
+        'icon-image': ['get', 'icon'],
+        'icon-size': 1.2,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'text-field': ['get', 'name'],
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 12,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-optional': true,
+        'text-padding': 2
+      },
+      paint: {
+        'text-color': '#222',
+        'text-halo-color': 'rgba(255,255,255,0.9)',
+        'text-halo-width': 1.5,
+        'text-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          12, 0,
+          13, 1
+        ]
+      }
+    });
+
+    applyFilters();
+
+    map.fitBounds(
+      [[INITIAL_BOUNDS[0], INITIAL_BOUNDS[1]], [INITIAL_BOUNDS[2], INITIAL_BOUNDS[3]]],
+      { padding: 50, maxZoom: 14, animate: false }
+    );
+
+    map.on('click', 'spots-icons', function(e) {
+      var props = e.features[0].properties;
+      var coords = e.features[0].geometry.coordinates.slice();
+      while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
+        coords[0] += e.lngLat.lng > coords[0] ? 360 : -360;
+      }
+      new mapboxgl.Popup({ offset: 15 })
+        .setLngLat(coords)
+        .setHTML(makePopupHTML(props))
+        .addTo(map);
+    });
+
+    map.on('mouseenter', 'spots-icons', function() { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'spots-icons', function() { map.getCanvas().style.cursor = ''; });
+  });
+})();
+</script>
+</body>
+</html>
