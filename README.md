@@ -241,7 +241,15 @@ every build. `deploy` is cron-friendly: with `-i` it deploys that one instance,
 without `-i` it deploys all of them, and either way it skips the commit/push if
 nothing changed — so a single `myspots deploy` cron keeps every map current.
 
-The published map has a geolocation button (drops a tracking dot at your current
+The published map has a **Find** box that does a free-text search across every
+field of every spot — name, address, notes, website, tags, categories, and
+flags. Matching is case-insensitive substring; multiple words all have to match
+(`ramen east` finds ramen places on the east side). The result count next to the
+filters is clickable and zooms the map to the matches. Search combines with the
+category/flag/tag filters, and all of it round-trips through the URL hash
+(`#q=ramen&cats=restaurant&flags=queued`), so a filtered view is linkable.
+
+The map also has a geolocation button (drops a tracking dot at your current
 location on click) and renders right-to-left labels (Hebrew, Arabic) correctly
 via Mapbox's RTL text plugin.
 
