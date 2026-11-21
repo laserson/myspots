@@ -1,0 +1,152 @@
+# Decisions for migrating the v1 Notion Places DBs (nyc/tlv/cdmx/cph) into "MySpots DB v2".
+# Agreed with the user 2026-11-21. Page IDs refer to v1 Notion pages.
+category_map:
+  restaurant:
+  - restaurant
+  - null
+  fast-food:
+  - restaurant
+  - fast-food
+  cafe:
+  - cafe
+  - null
+  bakery:
+  - bakery
+  - null
+  bar:
+  - bar
+  - null
+  cocktail-bar:
+  - bar
+  - cocktails
+  wine-bar:
+  - bar
+  - wine
+  natural-wine-bar:
+  - bar
+  - natural-wine
+  sake-bar:
+  - bar
+  - sake
+  beer-bar:
+  - bar
+  - beer
+  groceries:
+  - groceries
+  - null
+  butcher:
+  - groceries
+  - butcher
+  appetizing:
+  - groceries
+  - appetizing
+  cheese-shop:
+  - groceries
+  - cheese
+  liquor-store:
+  - bottle-shop
+  - null
+  shopping:
+  - shopping
+  - null
+  clothing-store:
+  - shopping
+  - clothing
+  record-shop:
+  - shopping
+  - records
+  book-store:
+  - shopping
+  - books
+  landmark:
+  - landmark
+  - null
+  museum:
+  - museum
+  - null
+  gallery:
+  - gallery
+  - null
+  park:
+  - park
+  - null
+  playground:
+  - park
+  - playground
+  venue:
+  - venue
+  - null
+  spa:
+  - wellness
+  - spa
+  gym:
+  - wellness
+  - gym
+tag_map:
+  mymaps-import: null
+  imported: null
+  imported-review: null
+  imported-Restaurants: list:mymaps-restaurants
+  imported-Shopping: list:mymaps-shopping
+  imported-Art/Music: list:mymaps-art-music
+  hotdog: hot-dogs
+  hot dogs: hot-dogs
+  hot pot: hot-pot
+  burger: burgers
+  georgian-food: georgian
+  walk-ins only: walk-in-only
+  no-reservations: walk-in-only
+  outdoors: outdoor-seating
+drop_tags_matching_category: true
+flag_map:
+  Visited: visited
+  Favorite: favorite
+  Queued: queued
+  Lame: lame
+  Reviewed: null
+  Permanently Closed: closed (checkbox)
+added: orig_date_added if set, else the v1 page's Notion created date
+notes: 'existing v1 notes become the first entry: ''<added> · me: <notes>'' (''import'' as source for
+  KML-import notes)'
+merge_rule: union tags/categories/flags; closed follows the kept row; earliest added; append a notes line
+  about the absorbed row
+merges:
+- keep: 7b5652e2-4355-4a16-b57c-05e0276974f9
+  absorb: 4bb516b5-915d-4957-b883-317d58f690e3
+  keep_name: Willoughby General
+  absorb_name: Willoughby General
+  note: null
+- keep: bf9d6aff-4214-4145-af62-8d022b264782
+  keep_name: Hao Noodle
+  absorb: 070dc9b9-7a43-4d76-b73b-632e2f04bbaa
+  absorb_name: Hao Noodle (好面馆）
+  note: null
+- keep: 3c3895fe-6f9b-4d18-aa69-c68fa3887c4e
+  keep_name: Momofuku Ssäm Bar
+  absorb: 1ae5b112-5ada-444c-8779-3436f843b615
+  absorb_name: Momofuku Bar Wayō
+  note: Ssäm Bar started at 207 2nd Ave, then moved into the Pier 17 space after Momofuku Bar Wayō closed;
+    both closed
+  refetch_from_google: true
+- keep: db974aa2-d17f-4590-86ff-c26a2ebc910c
+  absorb: 89684da8-7d51-4800-80e5-b139f5f780be
+  keep_name: Zabka Coffee
+  absorb_name: Zabka Coffee
+  note: also had a location at 616 Halsey St (closed)
+- keep: 29d9cd9b-7164-4375-8b32-de06d4907894
+  keep_name: Dough Doughnuts
+  absorb: e3f86ac8-abaa-48aa-b814-0f844352c49c
+  absorb_name: Dough
+  note: the Franklin Ave, Brooklyn shop (visited) closed
+- keep: 3d6047dd-5773-445a-ad33-a6396a25c553
+  keep_name: Mile End Delicatessen
+  absorb: 396a8f0b-941e-49aa-a161-4e36302565ed
+  absorb_name: Mile End
+  note: the Manhattan location at 53 Bond St closed
+repoint:
+- page: eadcc81d-b8bb-4da4-a9f6-2c0428c1369c
+  name: Jing Fong Chinatown
+  new_google_place_id: ChIJf31dgkxZwokR3nfEwC0M3e0
+  clear_closed: true
+  refetch_from_google: true
+  note: moved in 2021 from the 20 Elizabeth St hall (where visited) to 202 Centre St
