@@ -93,3 +93,6 @@ cache/
 
 # Claude Code session data
 .claude/
+
+# Built site (published by GitHub Actions)
+_site/

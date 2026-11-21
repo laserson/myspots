@@ -1,0 +1,38 @@
+# Site configuration (no secrets). Secrets come from env vars
+# (NOTION_TOKEN, MAPBOX_ACCESS_TOKEN) or ~/.config/myspots/cred.yaml.
+
+notion_database_id: 4185ebf8-0ae5-81f1-95eb-c5f143cf4035  # "MySpots DB v2"
+
+# One published map per entry, in landing-page order. The key is the value of
+# the `map` property in Notion and the URL path (/nyc/).
+maps:
+  nyc: {title: New York}
+  tlv: {title: Tel Aviv}
+  cdmx: {title: Mexico City}
+  cph: {title: Copenhagen}
+
+# Category → Mapbox (maki) icon. Order matters: a spot with several categories
+# gets the icon of the first one in this list.
+categories:
+  restaurant: restaurant
+  cafe: cafe
+  bakery: bakery
+  bar: bar
+  groceries: grocery
+  bottle-shop: alcohol-shop
+  shopping: shop
+  museum: museum
+  gallery: art-gallery
+  landmark: monument
+  park: park
+  venue: theatre
+  wellness: fitness-centre
+  hotel: lodging
+
+# Category chips always visible on the map; the rest go under "More".
+primary_categories: [restaurant, bar]
+
+# Flags shown as filter chips, in order. Spots flagged lame, or marked closed,
+# are left off the map entirely.
+flags: [favorite, queued, visited]
+hidden_flags: [lame]

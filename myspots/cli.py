@@ -25,8 +25,9 @@ from myspots import (
     "--config",
     "config_path",
     default=pathlib.Path.home() / ".config/myspots/cred.yaml",
-    type=Path(exists=True, dir_okay=False),
-    help="myspots config (default ~/.config/myspots/cred.yaml)",
+    type=Path(dir_okay=False),
+    help="myspots credentials (default ~/.config/myspots/cred.yaml; optional "
+    "for build-site, which can read NOTION_TOKEN / MAPBOX_ACCESS_TOKEN from the env)",
 )
 @option(
     "-i",
@@ -40,7 +41,7 @@ def cli(ctx, config_path, instance):
     """Manage your favorite places with Google Maps and Notion."""
     logger.add(sys.stderr, level="INFO")
     ctx.ensure_object(dict)
-    ctx.obj["full_config"] = get_config(config_path)
+    ctx.obj["full_config"] = get_config(config_path) if pathlib.Path(config_path).exists() else {}
     ctx.obj["instance"] = instance
 
 
@@ -262,100 +263,28 @@ def write_kml(ctx, no_styles, default_invisible):
     print(build_kml(store, category_graph, no_styles, default_invisible))
 
 
-def _repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
-
-
-def _build(config, instance, output_dir=None, mapbox_token=None) -> pathlib.Path:
-    import os
-
-    from myspots.site import build_site_data, render_site, write_site
-
-    token = mapbox_token or config.get("mapbox_access_token") or os.environ.get("MAPBOX_ACCESS_TOKEN")
-    if not token:
-        sys.exit("Mapbox access token required. Use --mapbox-token, set mapbox_access_token in cred.yaml, or set MAPBOX_ACCESS_TOKEN env var.")
-
-    store = NotionMySpotsStore(config)
-    category_graph = store.category_graph()
-    data = build_site_data(store, category_graph, title=config.get("title", "MySpots"))
-    html = render_site(data, token)
-    out = pathlib.Path(output_dir) if output_dir else _repo_root() / "docs" / instance
-    write_site(html, out)
-    logger.info("Wrote site to {}", out / "index.html")
-    return out
-
-
-def _write_landing(ctx) -> pathlib.Path:
-    """Write the root landing page listing all configured instance slugs."""
-    from myspots.site import render_landing, write_landing
-
-    slugs = list((ctx.obj["full_config"].get("instances") or {}).keys())
-    docs = _repo_root() / "docs"
-    write_landing(render_landing(slugs), docs)
-    return docs / "index.html"
-
-
 @cli.command(name="build-site")
-@option("--output-dir", default=None, type=Path(), help="Output directory (default: docs/ in repo root)")
-@option("--mapbox-token", default=None, help="Mapbox access token")
+@option("--output-dir", default="_site", type=Path(file_okay=False), show_default=True,
+        help="Where to write the site")
 @pass_context
-def build_site(ctx, output_dir, mapbox_token):
-    """Build the static map site from Notion data."""
-    config, instance = _resolved(ctx)
-    _build(config, instance, output_dir, mapbox_token)
-    if not output_dir:
-        _write_landing(ctx)
+def build_site(ctx, output_dir):
+    """Build the static map site from MySpots DB v2.
+
+    Builds every map in maps.yaml, or just one with -i/--instance <map>.
+    """
+    from myspots.site import build_site as _build_site
+
+    only = [ctx.obj["instance"]] if ctx.obj["instance"] else None
+    _build_site(pathlib.Path(output_dir), creds=ctx.obj["full_config"], only=only)
 
 
 @cli.command(name="deploy")
-@option("--mapbox-token", default=None, help="Mapbox access token")
-@pass_context
-def deploy(ctx, mapbox_token):
-    """Build, commit, and push to GitHub Pages. No-ops if nothing changed.
-
-    With -i/--instance, deploys just that instance; without it, deploys every
-    configured instance.
-    """
+def deploy():
+    """Trigger the GitHub Actions workflow that builds and publishes the site."""
     import subprocess
 
-    full_config = ctx.obj["full_config"]
-    all_instances = list((full_config.get("instances") or {}).keys())
-    if not all_instances:
-        sys.exit("No 'instances' configured. Add an 'instances:' map to your config.")
-
-    selected = ctx.obj["instance"]
-    if selected and selected not in all_instances:
-        available = ", ".join(sorted(all_instances))
-        raise UsageError(f"Unknown instance '{selected}'. Available: {available}")
-    targets = [selected] if selected else all_instances
-
-    repo_root = _repo_root()
-    built = [
-        _build(resolve_instance_config(full_config, inst), inst, mapbox_token=mapbox_token)
-        for inst in targets
-    ]
-    landing = _write_landing(ctx)
-    paths = [str(p) for p in built] + [str(landing)]
-
-    # --porcelain catches untracked files too (a fresh instance dir or a
-    # regenerated landing page), which `git diff --quiet` would miss.
-    status = subprocess.run(
-        ["git", "status", "--porcelain", "--", *paths],
-        cwd=repo_root, capture_output=True, text=True, check=True,
-    )
-    if not status.stdout.strip():
-        logger.info("No changes to deploy")
-        return
-
-    message = (
-        f"Rebuild {targets[0]} site"
-        if len(targets) == 1
-        else f"Rebuild sites: {', '.join(targets)}"
-    )
-    subprocess.run(["git", "add", *paths], cwd=repo_root, check=True)
-    subprocess.run(["git", "commit", "-m", message], cwd=repo_root, check=True)
-    subprocess.run(["git", "push"], cwd=repo_root, check=True)
-    logger.info("Deployed: {}", ", ".join(targets))
+    subprocess.run(["gh", "workflow", "run", "site.yml", "-f", "force=true"], check=True)
+    logger.info("Triggered site build; follow it with: gh run watch")
 
 
 @cli.command(name="refresh-store")

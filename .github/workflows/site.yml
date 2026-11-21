@@ -1,0 +1,98 @@
+# Build the map site from MySpots DB v2 (Notion) and publish it to GitHub Pages.
+#
+# Runs every 15 minutes to pick up Notion edits, on pushes that change the
+# build, and on demand (`myspots deploy`, or `gh workflow run site.yml`).
+# Deploys only when the built site differs from what is live (build-hash.txt).
+#
+# Secrets: NOTION_TOKEN (a read-only integration with access to the v2 DB),
+#          MAPBOX_ACCESS_TOKEN (public pk. token; it is embedded in the pages).
+name: site
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "7 0 * * *"  # daily; also runs the keepalive job below
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Deploy even if the site is unchanged
+        type: boolean
+        default: false
+  repository_dispatch:
+    types: [notion-changed]
+  push:
+    branches: [master]
+    paths:
+      - "myspots/**"
+      - maps.yaml
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/site.yml
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://laserson.github.io/myspots
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: Build site
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+        run: uv run myspots build-site --output-dir _site
+      - name: Compare with live site
+        id: compare
+        env:
+          FORCE: ${{ inputs.force || github.event_name == 'push' }}
+        run: |
+          live=$(curl -fsS "$SITE_URL/build-hash.txt?nocache=$(date +%s)" || true)
+          new=$(cat _site/build-hash.txt)
+          if [ "$FORCE" = "true" ] || [ "$live" != "$new" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"; echo "Site changed (live: ${live:0:12}, new: ${new:0:12})"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"; echo "No changes; skipping deploy"
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.compare.outputs.changed == 'true'
+        with:
+          path: _site
+
+  # GitHub disables scheduled workflows in public repos after 60 days without
+  # repo activity (Notion edits don't count). Re-enabling the already-enabled
+  # workflow resets that timer. Runs on the daily 00:07 UTC schedule.
+  keepalive:
+    if: github.event.schedule == '7 0 * * *'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Reset the inactivity timer
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/site.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

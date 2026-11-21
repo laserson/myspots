@@ -141,7 +141,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .popup-address { color: #666; font-size: 13px; margin-bottom: 6px; }
 .popup-meta { font-size: 12px; color: #888; }
 .popup-meta span { display: inline-block; margin-right: 8px; }
-.popup-notes { font-size: 13px; color: #555; margin-top: 6px; font-style: italic; }
+.popup-notes { font-size: 13px; color: #555; margin-top: 6px; font-style: italic; white-space: pre-line; }
 .popup-website { font-size: 13px; margin-top: 6px; }
 .popup-website a { color: #0288D1; text-decoration: none; }
 .popup-website a:hover { text-decoration: underline; }
@@ -154,19 +154,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 (function() {
   var DATA = __SPOTS_DATA__;
   var INITIAL_BOUNDS = __INITIAL_BOUNDS__;
-  var CATEGORY_ICONS = {
-    'restaurant': 'restaurant',
-    'bar': 'bar',
-    'groceries': 'grocery',
-    'gym': 'fitness-centre',
-    'landmark': 'monument',
-    'shopping': 'shop',
-    'spa': 'massage',
-    'Uncategorized': 'marker'
-  };
-  var flagNames = ['Favorite', 'Queued', 'Visited'];
+  var CATEGORY_ICONS = DATA.category_icons;
+  var flagNames = DATA.flag_names;
   var allTags = DATA.all_tags || [];
-  var PRIMARY_CATS = ['restaurant', 'bar'];
+  var PRIMARY_CATS = DATA.primary_categories;
 
   function toSlug(s) { return s.toLowerCase().replace(/\s+/g, '-'); }
 
@@ -181,7 +172,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   // Split categories into primary (always visible) and secondary ("More" dropdown)
   var primaryCats = [];
   var secondaryCats = [];
-  DATA.root_categories.sort().forEach(function(cat) {
+  DATA.categories.sort().forEach(function(cat) {
     if (PRIMARY_CATS.indexOf(cat) !== -1) primaryCats.push(cat);
     else secondaryCats.push(cat);
   });
@@ -199,7 +190,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   var ENTRIES = DATA.places.map(function(p) {
     var blob = [
       p.name, p.address, p.notes, p.website,
-      p.tags.join(' '), p.root_categories.join(' '), p.flags.join(' ')
+      p.tags.join(' '), p.categories.join(' '), p.flags.join(' ')
     ].filter(Boolean).join(' ').toLowerCase();
     return {
       place: p,
@@ -211,11 +202,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
           name: p.name,
           address: p.address || '',
           website: p.website || '',
+          google_place_id: p.google_place_id || '',
           notes: p.notes || '',
           flags_str: p.flags.join(', '),
           tags_str: p.tags.join(', '),
-          categories_str: p.root_categories.join(', '),
-          icon: categoryIcon(p.root_categories)
+          categories_str: p.categories.join(', '),
+          icon: categoryIcon(p.categories)
         }
       }
     };
@@ -577,10 +569,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
         searchInput.value = raw;
         searchClear.classList.toggle('hidden', !raw);
       } else if (key === 'cats') {
-        var catSlugs = DATA.root_categories.map(toSlug);
+        var catSlugs = DATA.categories.map(toSlug);
         values.forEach(function(slug) {
           var idx = catSlugs.indexOf(slug);
-          if (idx !== -1) activeCategories.add(DATA.root_categories[idx]);
+          if (idx !== -1) activeCategories.add(DATA.categories[idx]);
         });
       } else if (key === 'flags') {
         var flagSlugs = flagNames.map(toSlug);
@@ -641,8 +633,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
     if (activeCategories.size > 0) {
       var catHit = false;
-      for (i = 0; i < p.root_categories.length; i++) {
-        if (activeCategories.has(p.root_categories[i])) { catHit = true; break; }
+      for (i = 0; i < p.categories.length; i++) {
+        if (activeCategories.has(p.categories[i])) { catHit = true; break; }
       }
       if (!catHit) return false;
     }
@@ -687,7 +679,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     var links = '';
     if (p.website) links += '<a href="' + escAttr(p.website) + '" target="_blank" rel="noopener">Website</a>';
     var gmapsQuery = encodeURIComponent(p.name + (p.address ? ' ' + p.address : ''));
-    var gmapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + gmapsQuery;
+    var gmapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + gmapsQuery +
+      (p.google_place_id ? '&query_place_id=' + encodeURIComponent(p.google_place_id) : '');
     if (links) links += ' &middot; ';
     links += '<a href="' + escAttr(gmapsUrl) + '" target="_blank" rel="noopener">Google Maps</a>';
     html += '<div class="popup-website">' + links + '</div>';
