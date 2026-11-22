@@ -203,6 +203,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
           address: p.address || '',
           website: p.website || '',
           google_place_id: p.google_place_id || '',
+          notion_url: p.notion_url || '',
           notes: p.notes || '',
           flags_str: p.flags.join(', '),
           tags_str: p.tags.join(', '),
@@ -683,6 +684,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
       (p.google_place_id ? '&query_place_id=' + encodeURIComponent(p.google_place_id) : '');
     if (links) links += ' &middot; ';
     links += '<a href="' + escAttr(gmapsUrl) + '" target="_blank" rel="noopener">Google Maps</a>';
+    if (p.notion_url) links += ' &middot; <a href="' + escAttr(p.notion_url) + '" target="_blank" rel="noopener">Notion</a>';
     html += '<div class="popup-website">' + links + '</div>';
     return html;
   }

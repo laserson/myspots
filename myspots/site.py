@@ -104,6 +104,7 @@ def fetch_spots(notion: Client, database_id: str) -> list[dict]:
                 "lon": p["longitude"]["number"],
                 "website": p["website"]["url"],
                 "google_place_id": _text(p["google_place_id"]),
+                "notion_url": page["url"],
             })
         if not r["has_more"]:
             return spots
@@ -130,6 +131,7 @@ def build_map_data(spots: list[dict], slug: str, cfg: dict) -> dict:
         places.append({
             "name": s["name"], "address": s["address"], "lat": s["lat"], "lon": s["lon"],
             "website": s["website"], "notes": s["notes"], "google_place_id": s["google_place_id"],
+            "notion_url": s["notion_url"],
             "flags": [f for f in cfg["flags"] if f in s["flags"]],
             "tags": sorted(s["tags"]),
             "categories": cats,
