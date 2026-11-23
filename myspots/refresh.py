@@ -13,8 +13,9 @@ everything is written to the run summary.
     uv run python -m myspots.refresh --write --email
 
 Env vars (or ~/.config/myspots/cred.yaml): NOTION_REFRESH_TOKEN (read + update
-content), GOOGLE_API_KEY (Places API (New)); for --email: SMTP_USERNAME,
-SMTP_PASSWORD (a Gmail app password), ALERT_EMAIL_TO.
+content), GOOGLE_API_KEY (Places API (New)); for --email, any SMTP provider:
+SMTP_HOST, SMTP_PORT (default 587), SMTP_USERNAME, SMTP_PASSWORD,
+ALERT_EMAIL_FROM (default SMTP_USERNAME), ALERT_EMAIL_TO.
 """
 
 import dataclasses
@@ -224,17 +225,32 @@ def render(results: list[Result], errors: list[str], checked: int, due: int, tot
 
 
 def send_email(subject: str, body: str):
-    user, password, to = os.environ.get("SMTP_USERNAME"), os.environ.get("SMTP_PASSWORD"), os.environ.get("ALERT_EMAIL_TO")
-    if not (user and password and to):
-        logger.warning("SMTP_USERNAME / SMTP_PASSWORD / ALERT_EMAIL_TO not set; not emailing")
+    """Send via any SMTP provider (SendGrid, Postmark, Mailgun, Resend, SES, Fastmail, Gmail...).
+
+    SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, ALERT_EMAIL_TO are required;
+    SMTP_PORT defaults to 587 (STARTTLS; 465 uses implicit TLS), and
+    ALERT_EMAIL_FROM defaults to SMTP_USERNAME (set it when the username isn't
+    an address, e.g. SendGrid's "apikey").
+    """
+    env = {k: os.environ.get(k) for k in
+           ("SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "ALERT_EMAIL_FROM", "ALERT_EMAIL_TO")}
+    missing = [k for k in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "ALERT_EMAIL_TO") if not env[k]]
+    if missing:
+        logger.warning("Not emailing; missing {}", ", ".join(missing))
         return
+    port = int(env["SMTP_PORT"] or 587)
     msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = subject, user, to
+    msg["Subject"], msg["From"], msg["To"] = subject, env["ALERT_EMAIL_FROM"] or env["SMTP_USERNAME"], env["ALERT_EMAIL_TO"]
     msg.set_content(body)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(user, password)
+    if port == 465:
+        smtp = smtplib.SMTP_SSL(env["SMTP_HOST"], port, timeout=30)
+    else:
+        smtp = smtplib.SMTP(env["SMTP_HOST"], port, timeout=30)
+        smtp.starttls()
+    with smtp:
+        smtp.login(env["SMTP_USERNAME"], env["SMTP_PASSWORD"])
         smtp.send_message(msg)
-    logger.info("Emailed {} attention item(s)", body.count("\n* "))
+    logger.info("Emailed the alert address")
 
 
 ############################################
@@ -244,7 +260,7 @@ def send_email(subject: str, body: str):
 
 @click.command()
 @click.option("--write", is_flag=True, help="Update Notion (default: dry run).")
-@click.option("--email", is_flag=True, help="Email items that need attention (needs SMTP_* env vars).")
+@click.option("--email", is_flag=True, help="Email items that need attention (needs the SMTP_* / ALERT_EMAIL_* env vars).")
 @click.option("--max-checks", default=120, show_default=True, help="Google lookups per run.")
 def main(write, email, max_checks):
     from myspots import _install_notion_rate_limit_retry

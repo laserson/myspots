@@ -3,8 +3,10 @@
 # decision. The site workflow picks up the Notion changes on its next run.
 #
 # Secrets: NOTION_REFRESH_TOKEN (integration with read + update content on the
-#          v2 DB), GOOGLE_API_KEY (Places API (New)), SMTP_USERNAME and
-#          SMTP_PASSWORD (Gmail address + app password), ALERT_EMAIL_TO.
+#          v2 DB), GOOGLE_API_KEY (Places API (New)); email via any SMTP
+#          provider: SMTP_HOST, SMTP_PORT (optional, default 587),
+#          SMTP_USERNAME, SMTP_PASSWORD, ALERT_EMAIL_FROM (optional),
+#          ALERT_EMAIL_TO.
 name: refresh
 
 on:
@@ -34,7 +36,10 @@ jobs:
         env:
           NOTION_REFRESH_TOKEN: ${{ secrets.NOTION_REFRESH_TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
         run: uv run python -m myspots.refresh --write --email --max-checks "${{ inputs.max_checks || '120' }}"
