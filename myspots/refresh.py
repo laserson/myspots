@@ -186,13 +186,41 @@ def compare(spot: Spot, place) -> Result:
     elif status == "CLOSED_TEMPORARILY":
         res.changes.append("temporarily closed")
 
-    score = max(fuzz.token_set_ratio(_norm(spot.name), _norm(name)),
-                fuzz.partial_ratio(_norm(spot.name).replace(" ", ""), _norm(name).replace(" ", "")))
-    if name and score < NAME_SCORE_ALERT:
+    if name and name_score(spot.name, name) < NAME_SCORE_ALERT:
         res.attention.append(f"Google now calls it {name!r}: renamed, or a different business?")
 
     res.properties["refreshed"] = {"date": {"start": TODAY}}
     return res
+
+
+RELOCATE_METERS = 75  # an old ID's place is re-found only right where the spot is
+RELOCATE_NAME_SCORE = 60
+
+
+def name_score(a: str, b: str) -> float:
+    a, b = _norm(a), _norm(b)
+    return max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a.replace(" ", ""), b.replace(" ", "")))
+
+
+def relocate(places: places_v1.PlacesClient, spot: Spot):
+    """Find the current listing for a spot whose place ID Google no longer recognizes.
+
+    Google retires place IDs over time; Places API (New) then returns NOT_FOUND
+    instead of redirecting. Search the spot's name near its stored coordinates
+    and accept only a candidate right there with a matching name (pins are
+    accurate; a same-named place elsewhere is a different branch or business).
+    """
+    if spot.lat is None or spot.lon is None:
+        return None
+    bias = places_v1.SearchTextRequest.LocationBias(circle=places_v1.Circle(
+        center={"latitude": spot.lat, "longitude": spot.lon}, radius=100.0))
+    r = places.search_text(
+        request=places_v1.SearchTextRequest(text_query=spot.name, location_bias=bias, max_result_count=10),
+        metadata=[("x-goog-fieldmask", ",".join(f"places.{f}" for f in FIELDS))])
+    near = [(name_score(spot.name, c.display_name.text), c) for c in r.places
+            if meters(spot.lat, spot.lon, c.location.latitude, c.location.longitude) <= RELOCATE_METERS]
+    near = [(score, c) for score, c in near if score >= RELOCATE_NAME_SCORE]
+    return max(near, key=lambda sc: sc[0])[1] if near else None
 
 
 ############################################
@@ -264,7 +292,9 @@ def send_email(subject: str, body: str):
 @click.option("--max-checks", default=120, show_default=True, help="Google lookups per run.")
 @click.option("--map", "map_slug", default=None, help="Only spots on this map (e.g. nyc).")
 @click.option("--all", "check_all", is_flag=True, help="Check every spot, not just the overdue ones.")
-def main(write, email, max_checks, map_slug, check_all):
+@click.option("--names-file", type=click.Path(exists=True), default=None,
+              help="Only spots whose name is a line in this file (implies --all).")
+def main(write, email, max_checks, map_slug, check_all, names_file):
     from myspots import _install_notion_rate_limit_retry
 
     notion_token = _env("NOTION_REFRESH_TOKEN", "notion_api_token")
@@ -281,6 +311,9 @@ def main(write, email, max_checks, map_slug, check_all):
     today = dt.date.today()
     if map_slug:
         spots = [s for s in spots if s.map == map_slug]
+    if names_file:
+        wanted = {line.strip() for line in open(names_file) if line.strip()}
+        spots, check_all = [s for s in spots if s.name in wanted], True
     due = sorted((s for s in spots if check_all or s.due(today)), key=lambda s: (s.refreshed or "", s.added or "", s.name))
     batch = [s for s in due if s.place_id][:max_checks]
     errors = [f"{s.name} ({s.map}): no google_place_id" for s in due if not s.place_id]
@@ -293,8 +326,17 @@ def main(write, email, max_checks, map_slug, check_all):
                                      metadata=[("x-goog-fieldmask", ",".join(FIELDS))])
             res = compare(s, place)
         except gexc.NotFound:
-            res = Result(s, properties={"refreshed": {"date": {"start": TODAY}}},
-                         attention=["Google no longer finds this place ID: closed, or merged into another listing?"])
+            try:
+                place = relocate(places, s)
+            except gexc.GoogleAPICallError as e:
+                errors.append(f"{s.name} ({s.map}): Google error {e.code}: {e.message}")
+                continue
+            if place:  # same place under a new ID; compare() records the ID change
+                res = compare(s, place)
+            else:
+                res = Result(s, properties={"refreshed": {"date": {"start": TODAY}}},
+                             attention=["Google no longer finds this place ID, and nothing by that name "
+                                        "is listed at its location: closed?"])
         except gexc.GoogleAPICallError as e:
             errors.append(f"{s.name} ({s.map}): Google error {e.code}: {e.message}")
             continue
