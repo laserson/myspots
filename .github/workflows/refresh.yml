@@ -28,18 +28,31 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    env:
+      NOTION_REFRESH_TOKEN: ${{ secrets.NOTION_REFRESH_TOKEN }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+      ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
     steps:
+      # Until the secrets are added, skip with a notice instead of failing daily.
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -n "$NOTION_REFRESH_TOKEN" ] && [ -n "$GOOGLE_API_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Refresh skipped: add the NOTION_REFRESH_TOKEN and GOOGLE_API_KEY secrets to enable it."
+          fi
       - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
       - uses: astral-sh/setup-uv@v6
+        if: steps.secrets.outputs.ready == 'true'
       - run: uv sync --frozen
+        if: steps.secrets.outputs.ready == 'true'
       - name: Refresh spots from Google
-        env:
-          NOTION_REFRESH_TOKEN: ${{ secrets.NOTION_REFRESH_TOKEN }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
-          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        if: steps.secrets.outputs.ready == 'true'
         run: uv run python -m myspots.refresh --write --email --max-checks "${{ inputs.max_checks || '120' }}"
