@@ -191,7 +191,7 @@ class Places:
         return self.cache[key]
 
 
-SOURCES = {"nyt": r"nytimes\.com|\bNY ?Times\b", "afar": r"afar\.com"}
+SOURCES = {"nyt": r"nytimes\.com|\bNY ?Times\b", "afar": r"afar\.com", "eater": r"eater\.com|\bEater\b"}
 INLINE_NOTE_MAX = 100
 
 
@@ -253,7 +253,7 @@ def cli():
 @click.option("--out", type=click.Path(path_type=pathlib.Path), required=True, help="review file to write")
 @click.option("--force", is_flag=True, help="overwrite an existing review file")
 @click.option("--decisions", type=click.Path(exists=True, path_type=pathlib.Path), default=None,
-              help="YAML of match decisions by placemark name: {place_id: ...} or {skip: reason}")
+              help="YAML of match decisions by placemark name (or 'name @lat,lon'): {place_id: ...} or {skip: reason}")
 def resolve(kml, map_slug, list_tag, out, force, decisions):
     """Find each placemark on Google and write a review file."""
     decisions = yaml.safe_load(decisions.read_text()) if decisions else {}
@@ -267,7 +267,8 @@ def resolve(kml, map_slug, list_tag, out, force, decisions):
 
     spots, unresolved = {}, []
     for pm in tqdm(parse_kml(kml), desc="resolving"):
-        decision = decisions.get(pm["name"], {})
+        # A decision can target one pin ("Name @lat,lon", 3 decimals) when names repeat.
+        decision = decisions.get(f"{pm['name']} @{pm['lat']:.3f},{pm['lon']:.3f}") or decisions.get(pm["name"], {})
         if "skip" in decision:
             skipped.append(f"{pm['name']!r} ({pm['layer']}): {decision['skip']}")
             continue
