@@ -11,6 +11,7 @@ maps:
   cdmx: {title: Mexico City}
   cph: {title: Copenhagen}
   hudson: {title: Hudson Valley}
+  lisbon: {title: Lisbon}
 
 # Category → Mapbox (maki) icon. Order matters: a spot with several categories
 # gets the icon of the first one in this list.
