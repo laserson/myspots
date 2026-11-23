@@ -188,7 +188,8 @@ def _install_notion_rate_limit_retry(client, max_attempts: int = 6, max_delay: f
     exponential = wait_exponential(multiplier=1, max=max_delay)
 
     def _is_rate_limited(exc) -> bool:
-        return isinstance(exc, APIResponseError) and getattr(exc, "code", None) == "rate_limited"
+        return isinstance(exc, APIResponseError) and getattr(exc, "code", None) in {
+            "rate_limited", "service_unavailable", "internal_server_error", "gateway_timeout"}
 
     def _wait(retry_state) -> float:
         # Honor Notion's Retry-After header when present, else back off.

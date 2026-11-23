@@ -1,0 +1,40 @@
+# Re-check the most overdue spots against Google Maps once a day (see
+# myspots/refresh.py). Updates Notion and emails only when something needs a
+# decision. The site workflow picks up the Notion changes on its next run.
+#
+# Secrets: NOTION_REFRESH_TOKEN (integration with read + update content on the
+#          v2 DB), GOOGLE_API_KEY (Places API (New)), SMTP_USERNAME and
+#          SMTP_PASSWORD (Gmail address + app password), ALERT_EMAIL_TO.
+name: refresh
+
+on:
+  schedule:
+    - cron: "23 11 * * *"  # daily, early morning US Eastern
+  workflow_dispatch:
+    inputs:
+      max_checks:
+        description: Google lookups this run
+        default: "120"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: Refresh spots from Google
+        env:
+          NOTION_REFRESH_TOKEN: ${{ secrets.NOTION_REFRESH_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        run: uv run python -m myspots.refresh --write --email --max-checks "${{ inputs.max_checks || '120' }}"

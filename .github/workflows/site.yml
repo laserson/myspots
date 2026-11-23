@@ -74,7 +74,7 @@ jobs:
 
   # GitHub disables scheduled workflows in public repos after 60 days without
   # repo activity (Notion edits don't count). Re-enabling the already-enabled
-  # workflow resets that timer. Runs on the daily 00:07 UTC schedule.
+  # workflows resets that timer. Runs on the daily 00:07 UTC schedule.
   keepalive:
     if: github.event.schedule == '7 0 * * *'
     runs-on: ubuntu-latest
@@ -82,7 +82,10 @@ jobs:
       actions: write
     steps:
       - name: Reset the inactivity timer
-        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/site.yml/enable"
+        run: |
+          for wf in site.yml refresh.yml; do
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/enable"
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 
