@@ -96,3 +96,8 @@ cache/
 
 # Built site (published by GitHub Actions)
 _site/
+
+# Imports: KML exports and review files hold personal notes
+*.kml
+*.kmz
+imports/
