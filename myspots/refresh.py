@@ -262,7 +262,9 @@ def send_email(subject: str, body: str):
 @click.option("--write", is_flag=True, help="Update Notion (default: dry run).")
 @click.option("--email", is_flag=True, help="Email items that need attention (needs the SMTP_* / ALERT_EMAIL_* env vars).")
 @click.option("--max-checks", default=120, show_default=True, help="Google lookups per run.")
-def main(write, email, max_checks):
+@click.option("--map", "map_slug", default=None, help="Only spots on this map (e.g. nyc).")
+@click.option("--all", "check_all", is_flag=True, help="Check every spot, not just the overdue ones.")
+def main(write, email, max_checks, map_slug, check_all):
     from myspots import _install_notion_rate_limit_retry
 
     notion_token = _env("NOTION_REFRESH_TOKEN", "notion_api_token")
@@ -277,7 +279,9 @@ def main(write, email, max_checks):
     ds = notion.databases.retrieve(database_id=database_id)["data_sources"][0]["id"]
     spots = fetch_spots(notion, ds)
     today = dt.date.today()
-    due = sorted((s for s in spots if s.due(today)), key=lambda s: (s.refreshed or "", s.added or "", s.name))
+    if map_slug:
+        spots = [s for s in spots if s.map == map_slug]
+    due = sorted((s for s in spots if check_all or s.due(today)), key=lambda s: (s.refreshed or "", s.added or "", s.name))
     batch = [s for s in due if s.place_id][:max_checks]
     errors = [f"{s.name} ({s.map}): no google_place_id" for s in due if not s.place_id]
     logger.info("{} spots, {} due, checking {}", len(spots), len(due), len(batch))

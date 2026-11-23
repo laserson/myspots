@@ -200,6 +200,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
         geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
         properties: {
           name: p.name,
+          // Map labels come from Mapbox font glyphs, which stop at U+FFFF: a name
+          // with an emoji (e.g. "Holy Wine 🍾") 404s its glyph request and blanks
+          // every marker in that tile. Labels drop those characters; popups keep them.
+          label: p.name.replace(/[\u{10000}-\u{10FFFF}\uFE0F\u200D]/gu, '').trim(),
           address: p.address || '',
           website: p.website || '',
           google_place_id: p.google_place_id || '',
@@ -716,7 +720,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
         'icon-size': 1.2,
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
-        'text-field': ['get', 'name'],
+        'text-field': ['get', 'label'],
         'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
         'text-size': 12,
         'text-offset': [0, 1.1],
