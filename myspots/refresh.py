@@ -175,18 +175,21 @@ def compare(spot: Spot, place) -> Result:
                 res.notes.append(f"{TODAY} · refresh: moved {dist:,.0f} m, now {place.formatted_address}")
                 res.changes.append(f"moved {dist:,.0f} m")
 
+    renamed = bool(name) and name_score(spot.name, name) < NAME_SCORE_ALERT
     if status == "CLOSED_PERMANENTLY" and not spot.closed:
         res.properties["closed"] = {"checkbox": True}
         res.notes.append(f"{TODAY} · refresh: Google reports permanently closed")
         res.changes.append("now permanently closed")
         if {"queued", "favorite"} & set(spot.flags):
             res.attention.append(f"closed permanently (it was {', '.join(sorted({'queued', 'favorite'} & set(spot.flags)))})")
-    elif status == "OPERATIONAL" and spot.closed:
+    elif status == "OPERATIONAL" and spot.closed and not renamed:
         res.attention.append("marked closed, but Google says it's open: reopened? (closed is left as is)")
     elif status == "CLOSED_TEMPORARILY":
         res.changes.append("temporarily closed")
 
-    if name and name_score(spot.name, name) < NAME_SCORE_ALERT:
+    if renamed and spot.closed:  # already decided: a different business now has this listing
+        res.changes.append(f"listing now {name!r} (spot is closed)")
+    elif renamed:
         res.attention.append(f"Google now calls it {name!r}: renamed, or a different business?")
 
     res.properties["refreshed"] = {"date": {"start": TODAY}}
@@ -338,9 +341,12 @@ def main(write, email, max_checks, map_slug, check_all, names_file, report_file)
             if place:  # same place under a new ID; compare() records the ID change
                 res = compare(s, place)
             else:
-                res = Result(s, properties={"refreshed": {"date": {"start": TODAY}}},
-                             attention=["Google no longer finds this place ID, and nothing by that name "
-                                        "is listed at its location: closed?"])
+                res = Result(s, properties={"refreshed": {"date": {"start": TODAY}}})
+                if s.closed:  # already marked closed; nothing to decide
+                    res.changes.append("no longer on Google (spot is closed)")
+                else:
+                    res.attention.append("Google no longer finds this place ID, and nothing by that name "
+                                         "is listed at its location: closed?")
         except gexc.GoogleAPICallError as e:
             errors.append(f"{s.name} ({s.map}): Google error {e.code}: {e.message}")
             continue

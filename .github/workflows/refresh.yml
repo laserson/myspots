@@ -20,6 +20,10 @@ on:
       max_checks:
         description: Google lookups this run
         default: "120"
+      test_issue:
+        description: Also post a test comment to the refresh issue
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,6 +74,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           report="$RUNNER_TEMP/attention.md"
+          if [ "${{ inputs.test_issue }}" = true ]; then
+            printf '## Test\nThis is a test of the refresh alerts. Close this issue.\n' >> "$report"
+          fi
           [ -s "$report" ] || exit 0
           printf '\n[Run log](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
           gh label create refresh --color FBCA04 --description "Spots that need a decision" 2>/dev/null || true
