@@ -6,6 +6,8 @@
 #
 # Secrets: NOTION_TOKEN (a read-only integration with access to the v2 DB),
 #          MAPBOX_ACCESS_TOKEN (public pk. token; it is embedded in the pages).
+#          Optional: HEALTHCHECK_SITE_URL (healthchecks.io ping URL; pinged
+#          after each run, /fail if the build, deploy or keepalive failed).
 name: site
 
 on:
@@ -99,3 +101,17 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  healthcheck:
+    needs: [build, keepalive, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping healthchecks.io
+        env:
+          URL: ${{ secrets.HEALTHCHECK_SITE_URL }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          [ -n "$URL" ] || exit 0
+          if [ "$FAILED" = true ]; then s=/fail; else s=; fi
+          curl -fsS -m 10 --retry 3 -o /dev/null "$URL$s" || echo "::warning::healthchecks.io ping failed"

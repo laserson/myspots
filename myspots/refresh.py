@@ -243,8 +243,9 @@ def render(results: list[Result], errors: list[str], checked: int, due: int, tot
             md.append(f"- [{s.name}]({s.url}) ({s.map}): " + "; ".join(r.attention + r.changes))
             txt += [f"* {s.name} ({s.map})", *(f"    {a}" for a in r.attention + r.changes), f"    {s.url}", ""]
     if changed:
-        md.append("\n### Updated")
+        md.append(f"\n<details><summary>Updated ({len(changed)})</summary>\n")
         md += [f"- [{r.spot.name}]({r.spot.url}) ({r.spot.map}): " + "; ".join(r.changes) for r in changed]
+        md.append("\n</details>")
     if errors:
         md.append("\n### Errors")
         md += [f"- {e}" for e in errors]
@@ -292,9 +293,12 @@ def send_email(subject: str, body: str):
 @click.option("--max-checks", default=120, show_default=True, help="Google lookups per run.")
 @click.option("--map", "map_slug", default=None, help="Only spots on this map (e.g. nyc).")
 @click.option("--all", "check_all", is_flag=True, help="Check every spot, not just the overdue ones.")
+@click.option("--report-file", type=click.Path(dir_okay=False), default=None,
+              help="Write the markdown report here when something needs attention or failed "
+                   "(the workflow posts it to a GitHub issue).")
 @click.option("--names-file", type=click.Path(exists=True), default=None,
               help="Only spots whose name is a line in this file (implies --all).")
-def main(write, email, max_checks, map_slug, check_all, names_file):
+def main(write, email, max_checks, map_slug, check_all, names_file, report_file):
     from myspots import _install_notion_rate_limit_retry
 
     notion_token = _env("NOTION_REFRESH_TOKEN", "notion_api_token")
@@ -354,6 +358,9 @@ def main(write, email, max_checks, map_slug, check_all, names_file):
     if not write:
         print("Dry run: nothing written to Notion, no email sent.")
         return
+    if report_file and (any(r.attention for r in results) or errors):
+        with open(report_file, "w") as f:
+            f.write(md)
     if email and (any(r.attention for r in results) or errors):
         n = sum(bool(r.attention) for r in results)
         send_email(f"MySpots: {n} spot(s) need your attention" if n else "MySpots refresh: errors", txt)

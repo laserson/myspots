@@ -1,12 +1,15 @@
 # Re-check the most overdue spots against Google Maps once a day (see
-# myspots/refresh.py). Updates Notion and emails only when something needs a
-# decision. The site workflow picks up the Notion changes on its next run.
+# myspots/refresh.py). Updates Notion; when something needs a decision it
+# comments on the open "refresh" GitHub issue (opening one if needed), so the
+# usual GitHub notifications deliver it. Close the issue once handled. The site
+# workflow picks up the Notion changes on its next run.
 #
 # Secrets: NOTION_REFRESH_TOKEN (integration with read + update content on the
-#          v2 DB), GOOGLE_API_KEY (Places API (New)); email via any SMTP
-#          provider: SMTP_HOST, SMTP_PORT (optional, default 587),
-#          SMTP_USERNAME, SMTP_PASSWORD, ALERT_EMAIL_FROM (optional),
-#          ALERT_EMAIL_TO.
+#          v2 DB), GOOGLE_API_KEY (Places API (New)).
+#          Optional: HEALTHCHECK_REFRESH_URL (healthchecks.io ping URL; pinged
+#          on success, /fail on failure); email via any SMTP provider:
+#          SMTP_HOST, SMTP_PORT (default 587), SMTP_USERNAME, SMTP_PASSWORD,
+#          ALERT_EMAIL_FROM, ALERT_EMAIL_TO.
 name: refresh
 
 on:
@@ -20,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: refresh
@@ -37,6 +41,7 @@ jobs:
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
       ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+      HEALTHCHECK_REFRESH_URL: ${{ secrets.HEALTHCHECK_REFRESH_URL }}
     steps:
       # Until the secrets are added, skip with a notice instead of failing daily.
       - name: Check secrets
@@ -55,4 +60,27 @@ jobs:
         if: steps.secrets.outputs.ready == 'true'
       - name: Refresh spots from Google
         if: steps.secrets.outputs.ready == 'true'
-        run: uv run python -m myspots.refresh --write --email --max-checks "${{ inputs.max_checks || '120' }}"
+        run: >-
+          uv run python -m myspots.refresh --write --email
+          --max-checks "${{ inputs.max_checks || '120' }}"
+          --report-file "$RUNNER_TEMP/attention.md"
+      - name: Post to the refresh issue
+        if: always() && steps.secrets.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          report="$RUNNER_TEMP/attention.md"
+          [ -s "$report" ] || exit 0
+          printf '\n[Run log](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          gh label create refresh --color FBCA04 --description "Spots that need a decision" 2>/dev/null || true
+          issue=$(gh issue list --label refresh --state open --limit 1 --json number -q '.[0].number')
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body-file "$report"
+          else
+            gh issue create --title "Spots need a decision" --label refresh --body-file "$report"
+          fi
+      - name: Ping healthchecks.io
+        if: always() && env.HEALTHCHECK_REFRESH_URL != ''
+        run: |
+          if [ "${{ job.status }}" = success ] && [ "${{ steps.secrets.outputs.ready }}" = true ]; then s=; else s=/fail; fi
+          curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_REFRESH_URL$s" || echo "::warning::healthchecks.io ping failed"
