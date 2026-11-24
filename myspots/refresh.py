@@ -39,6 +39,7 @@ from myspots.site import load_site_config
 OPEN_DAYS = 30
 CLOSED_DAYS = 180
 MOVED_METERS = 100  # beyond this, update coordinates and log a note
+MOVE_ALERT_METERS = 1000  # farther than this is a different spot on the map: ask, don't apply
 NAME_SCORE_ALERT = 50  # below this, Google's name looks like a different business
 # Pro-tier fields only: websiteUri would bill every call at the Enterprise tier.
 FIELDS = ["id", "displayName", "formattedAddress", "location", "businessStatus"]
@@ -157,6 +158,18 @@ def compare(spot: Spot, place) -> Result:
     status = places_v1.Place.BusinessStatus(place.business_status).name
     name = place.display_name.text
 
+    lat, lon = place.location.latitude, place.location.longitude
+    has_loc = bool(lat or lon)
+    dist = meters(spot.lat, spot.lon, lat, lon) if has_loc and spot.lat is not None and spot.lon is not None else math.inf
+    if has_loc and MOVE_ALERT_METERS < dist < math.inf:
+        # A far "move" is usually a wrong or reassigned place ID, or a closure Google
+        # merged into another branch; either way the pin would jump. Leave the spot as is.
+        if not spot.closed:
+            res.attention.append(f"Google's listing is {dist / 1000:,.1f} km away, at {place.formatted_address}: "
+                                 "moved, or the wrong place? (not applied; fix the address and place ID, or mark closed)")
+        res.properties["refreshed"] = {"date": {"start": TODAY}}
+        return res
+
     if place.id and place.id != spot.place_id:
         res.properties["google_place_id"] = {"rich_text": [{"type": "text", "text": {"content": place.id}}]}
         res.notes.append(f"{TODAY} · refresh: Google place ID changed ({spot.place_id} → {place.id})")
@@ -165,9 +178,7 @@ def compare(spot: Spot, place) -> Result:
     if place.formatted_address and place.formatted_address != spot.address:
         res.properties["address"] = {"rich_text": [{"type": "text", "text": {"content": place.formatted_address}}]}
         res.changes.append(f"address: {spot.address!r} → {place.formatted_address!r}")
-    if place.location.latitude or place.location.longitude:
-        lat, lon = place.location.latitude, place.location.longitude
-        dist = meters(spot.lat, spot.lon, lat, lon) if spot.lat is not None and spot.lon is not None else math.inf
+    if has_loc:
         if dist > MOVED_METERS:
             res.properties["latitude"] = {"number": lat}
             res.properties["longitude"] = {"number": lon}
